@@ -3,12 +3,20 @@
 Splatoon3 のステージ情報とサーモンラン情報を Discord で確認できる Bot です。  
 通常のコマンドに加えて、ローテーション更新時の自動通知にも対応しています。
 
-![screenshot](img/readme1.png)
-![screenshot](img/readme2.png)
-![screenshot](img/readme3.png)
-![screenshot](img/readme4.png)
-![screenshot](img/readme5.png)
-![screenshot](img/readme6.png)
+<table>
+  <tr>
+    <td><img src="img/readme1.png" width="480" alt="screenshot"></td>
+    <td><img src="img/readme2.png" width="480" alt="screenshot"></td>
+  </tr>
+  <tr>
+    <td><img src="img/readme3.png" width="480" alt="screenshot"></td>
+    <td><img src="img/readme4.png" width="480" alt="screenshot"></td>
+  </tr>
+  <tr>
+    <td><img src="img/readme5.png" width="480" alt="screenshot"></td>
+    <td><img src="img/readme6.png" width="480" alt="screenshot"></td>
+  </tr>
+</table>
 
 ## 機能
 - `/now` : 現在のステージ情報を表示
