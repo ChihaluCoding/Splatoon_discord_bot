@@ -15,6 +15,12 @@ API_URL = "https://spla3.yuu26.com/api/schedule"
 SALMON_API_URL = "https://spla3.yuu26.com/api/coop-grouping/schedule"
 TEAM_CONTEST_API_URL = "https://spla3.yuu26.com/api/coop-grouping-team-contest/schedule"
 EVENT_API_URL = "https://spla3.yuu26.com/api/event/schedule"
+FEST_API_URL = "https://spla3.yuu26.com/api/fest/schedule"
+GEAR_API_URL = "https://splatoon3.ink/data/gear.json"
+COOP_API_URL = "https://splatoon3.ink/data/coop.json"
+FESTIVALS_API_URL = "https://splatoon3.ink/data/festivals.json"
+XRANK_API_URL = "https://splatoon3.ink/data/xrank/xrank.takoroka.json"
+LOCALE_API_URL = "https://splatoon3.ink/data/locale/ja-JP.json"
 USER_AGENT = "DiscordBot_SplaStageInfo (Contact: chihalu)" # 連絡先を記載
 
 # Botの基本設定
@@ -29,7 +35,19 @@ STAGE_NOTIFY_CHANNEL_ID = int(os.getenv("STAGE_NOTIFY_CHANNEL_ID", "0") or "0")
 STAGE_NOTIFY_ON_START = (os.getenv("STAGE_NOTIFY_ON_START", "0") == "1")
 EVENT_NOTIFY_CHANNEL_ID = int(os.getenv("EVENT_NOTIFY_CHANNEL_ID", "0") or "0")
 EVENT_NOTIFY_ON_START = (os.getenv("EVENT_NOTIFY_ON_START", "0") == "1")
+SALMON_NOTIFY_CHANNEL_ID = int(os.getenv("SALMON_NOTIFY_CHANNEL_ID", "0") or "0")
+SALMON_NOTIFY_ON_START = (os.getenv("SALMON_NOTIFY_ON_START", "0") == "1")
+TEAM_CONTEST_NOTIFY_CHANNEL_ID = int(os.getenv("TEAM_CONTEST_NOTIFY_CHANNEL_ID", "0") or "0")
+TEAM_CONTEST_NOTIFY_ON_START = (os.getenv("TEAM_CONTEST_NOTIFY_ON_START", "0") == "1")
+FEST_NOTIFY_CHANNEL_ID = int(os.getenv("FEST_NOTIFY_CHANNEL_ID", "0") or "0")
+FEST_NOTIFY_ON_START = (os.getenv("FEST_NOTIFY_ON_START", "0") == "1")
+GEAR_NOTIFY_CHANNEL_ID = int(os.getenv("GEAR_NOTIFY_CHANNEL_ID", "0") or "0")
+GEAR_NOTIFY_ON_START = (os.getenv("GEAR_NOTIFY_ON_START", "0") == "1")
+XRANK_NOTIFY_CHANNEL_ID = int(os.getenv("XRANK_NOTIFY_CHANNEL_ID", "0") or "0")
+COOP_MONTHLY_NOTIFY_CHANNEL_ID = int(os.getenv("COOP_MONTHLY_NOTIFY_CHANNEL_ID", "0") or "0")
 BOT_ACTIVITY_NAME = os.getenv("BOT_ACTIVITY_NAME", "Splatoon")
+
+_LOCALE_CACHE: dict | None = None
 
 def _load_state() -> dict:
     try:
@@ -119,6 +137,78 @@ def get_event_schedule():
     headers = {"User-Agent": USER_AGENT}
     try:
         response = requests.get(EVENT_API_URL, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+
+def get_fest_schedule():
+    """APIからフェスのスケジュール情報を取得する"""
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        response = requests.get(FEST_API_URL, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+
+def get_gear_data():
+    """APIからゲソタウンのギア情報を取得する"""
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        response = requests.get(GEAR_API_URL, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+
+def get_coop_data():
+    """APIからサーモンランのリザルト情報を取得する"""
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        response = requests.get(COOP_API_URL, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+
+def get_festivals_data():
+    """APIからフェス情報を取得する"""
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        response = requests.get(FESTIVALS_API_URL, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+
+def get_xrank_data():
+    """APIからXランキング情報を取得する"""
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        response = requests.get(XRANK_API_URL, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+
+def get_locale_data():
+    """APIから日本語ロケール情報を取得する"""
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        response = requests.get(LOCALE_API_URL, headers=headers, timeout=10)
         if response.status_code == 200:
             return response.json()
         return None
@@ -434,6 +524,188 @@ def _render_salmon_stage_with_weapons_bytes(stage_path: str | None, weapon_names
     canvas.convert("RGB").save(out, format="PNG", optimize=True)
     return out.getvalue()
 
+def _render_gear_collage_bytes(items: list[dict], title: str) -> bytes | None:
+    try:
+        from PIL import Image, ImageDraw, ImageFont  # type: ignore
+    except Exception:
+        return None
+
+    if not items:
+        return None
+
+    def load_font(size: int):
+        for candidate in (
+            r"C:\Windows\Fonts\meiryo.ttc",
+            r"C:\Windows\Fonts\YuGothR.ttc",
+            r"C:\Windows\Fonts\msgothic.ttc",
+        ):
+            if os.path.exists(candidate):
+                try:
+                    return ImageFont.truetype(candidate, size=size)
+                except Exception:
+                    pass
+        return ImageFont.load_default()
+
+    cols = 3
+    rows = (len(items) + cols - 1) // cols
+    card_w = 1000
+    card_h = 520
+    pad = 24
+    gap = 16
+    header_h = 60
+    cell_w = (card_w - pad * 2 - gap * (cols - 1)) // cols
+    cell_h = (card_h - pad * 2 - header_h - gap * (rows - 1)) // rows
+
+    bg = (20, 24, 34, 255)
+    card = Image.new("RGBA", (card_w, card_h), bg)
+    draw = ImageDraw.Draw(card)
+
+    title_font = load_font(28)
+    draw.text((pad, pad + 6), title, fill=(255, 255, 255, 255), font=title_font)
+
+    def fetch_image(url: str) -> Image.Image | None:
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200:
+                return None
+            return Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        except Exception:
+            return None
+
+    def paste_cover(target: Image.Image, img: Image.Image, x: int, y: int, w: int, h: int):
+        iw, ih = img.size
+        scale = max(w / iw, h / ih)
+        nw, nh = int(iw * scale), int(ih * scale)
+        resized = img.resize((nw, nh), Image.Resampling.LANCZOS)
+        left = (nw - w) // 2
+        top = (nh - h) // 2
+        cropped = resized.crop((left, top, left + w, top + h))
+        target.alpha_composite(cropped, (x, y))
+
+    label_font = load_font(20)
+    label_h = 34
+
+    for idx, item in enumerate(items):
+        row = idx // cols
+        col = idx % cols
+        x = pad + col * (cell_w + gap)
+        y = pad + header_h + row * (cell_h + gap)
+
+        panel = Image.new("RGBA", (cell_w, cell_h), (10, 12, 18, 255))
+        img = fetch_image(item.get("image_url") or "")
+        if img:
+            paste_cover(panel, img, 0, 0, cell_w, cell_h)
+
+        # label overlay
+        overlay = Image.new("RGBA", (cell_w, label_h), (0, 0, 0, 160))
+        odraw = ImageDraw.Draw(overlay)
+        name = item.get("name") or "不明"
+        bbox = odraw.textbbox((0, 0), name, font=label_font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+        odraw.text(((cell_w - tw) // 2, (label_h - th) // 2 - 1), name, fill=(255, 255, 255, 255), font=label_font)
+        panel.alpha_composite(overlay, (0, cell_h - label_h))
+
+        card.alpha_composite(panel, (x, y))
+
+    out = io.BytesIO()
+    card.convert("RGB").save(out, format="PNG", optimize=True)
+    return out.getvalue()
+
+def _render_gear_collage_sections_bytes(sections: list[tuple[str, list[dict]]]) -> bytes | None:
+    try:
+        from PIL import Image, ImageDraw, ImageFont  # type: ignore
+    except Exception:
+        return None
+
+    sections = [(title, items) for title, items in sections if items]
+    if not sections:
+        return None
+
+    def load_font(size: int):
+        for candidate in (
+            r"C:\Windows\Fonts\meiryo.ttc",
+            r"C:\Windows\Fonts\YuGothR.ttc",
+            r"C:\Windows\Fonts\msgothic.ttc",
+        ):
+            if os.path.exists(candidate):
+                try:
+                    return ImageFont.truetype(candidate, size=size)
+                except Exception:
+                    pass
+        return ImageFont.load_default()
+
+    def fetch_image(url: str) -> Image.Image | None:
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200:
+                return None
+            return Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        except Exception:
+            return None
+
+    def paste_cover(target: Image.Image, img: Image.Image, x: int, y: int, w: int, h: int):
+        iw, ih = img.size
+        scale = max(w / iw, h / ih)
+        nw, nh = int(iw * scale), int(ih * scale)
+        resized = img.resize((nw, nh), Image.Resampling.LANCZOS)
+        left = (nw - w) // 2
+        top = (nh - h) // 2
+        cropped = resized.crop((left, top, left + w, top + h))
+        target.alpha_composite(cropped, (x, y))
+
+    card_w = 1000
+    card_h = 900
+    pad = 24
+    gap = 16
+    section_gap = 28
+    header_h = 46
+    cols = 3
+
+    bg = (20, 24, 34, 255)
+    card = Image.new("RGBA", (card_w, card_h), bg)
+    draw = ImageDraw.Draw(card)
+    title_font = load_font(26)
+    label_font = load_font(20)
+    label_h = 34
+
+    y_cursor = pad
+    for title, items in sections:
+        draw.text((pad, y_cursor + 2), title, fill=(255, 255, 255, 255), font=title_font)
+        y_cursor += header_h
+
+        rows = (len(items) + cols - 1) // cols
+        cell_w = (card_w - pad * 2 - gap * (cols - 1)) // cols
+        cell_h = 220
+
+        for idx, item in enumerate(items):
+            row = idx // cols
+            col = idx % cols
+            x = pad + col * (cell_w + gap)
+            y = y_cursor + row * (cell_h + gap)
+
+            panel = Image.new("RGBA", (cell_w, cell_h), (10, 12, 18, 255))
+            img = fetch_image(item.get("image_url") or "")
+            if img:
+                paste_cover(panel, img, 0, 0, cell_w, cell_h)
+
+            overlay = Image.new("RGBA", (cell_w, label_h), (0, 0, 0, 160))
+            odraw = ImageDraw.Draw(overlay)
+            name = item.get("name") or "不明"
+            bbox = odraw.textbbox((0, 0), name, font=label_font)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            odraw.text(((cell_w - tw) // 2, (label_h - th) // 2 - 1), name, fill=(255, 255, 255, 255), font=label_font)
+            panel.alpha_composite(overlay, (0, cell_h - label_h))
+
+            card.alpha_composite(panel, (x, y))
+
+        y_cursor += rows * (cell_h + gap) - gap + section_gap
+
+    out = io.BytesIO()
+    card.convert("RGB").save(out, format="PNG", optimize=True)
+    return out.getvalue()
+
 def _build_mode_embeds(result: dict, schedule_index: int, title_prefix: str) -> tuple[list[discord.Embed], list[discord.File]]:
     # 取得したいモードのリスト
     modes = {
@@ -459,7 +731,6 @@ def _build_mode_embeds(result: dict, schedule_index: int, title_prefix: str) -> 
         mode_data = result.get(key, [])
         if len(mode_data) <= schedule_index:
             embed = discord.Embed(title=f"【{name}】", description="情報がありません。", color=color)
-            embed.set_author(name=title_prefix)
             if mode_icon_path:
                 filename = _safe_attachment_filename(mode_icon_path, prefix="mode")
                 embed.set_thumbnail(url=f"attachment://{filename}")
@@ -477,7 +748,6 @@ def _build_mode_embeds(result: dict, schedule_index: int, title_prefix: str) -> 
         end_time = _format_hhmm(item["end_time"])
 
         embed = discord.Embed(title=f"【{name}】", color=color)
-        embed.set_author(name=title_prefix)
         embed.add_field(name="時間", value=f"{start_time}～{end_time}", inline=True)
         embed.add_field(name="ルール", value=f"**{rule}**", inline=True)
         embed.add_field(name="ステージ", value=f"1. {stage1_name}\n2. {stage2_name}", inline=False)
@@ -535,6 +805,61 @@ def _get_stage_rotation_key(data: dict) -> str | None:
     except Exception:
         return None
 
+def _find_current_item(results: list[dict]) -> dict | None:
+    now = datetime.now().astimezone()
+    for item in results:
+        try:
+            start_raw = item.get("start_time") or item.get("startTime") or ""
+            end_raw = item.get("end_time") or item.get("endTime") or ""
+            start_time = _parse_iso_datetime(start_raw)
+            end_time = _parse_iso_datetime(end_raw)
+        except Exception:
+            continue
+        if start_time <= now < end_time:
+            return item
+    return None
+
+def _load_locale() -> dict:
+    global _LOCALE_CACHE
+    if _LOCALE_CACHE is not None:
+        return _LOCALE_CACHE
+    data = get_locale_data()
+    _LOCALE_CACHE = data or {}
+    return _LOCALE_CACHE
+
+def _locale_name(category: str, key: str | None) -> str | None:
+    if not key:
+        return None
+    loc = _load_locale()
+    item = (loc.get(category) or {}).get(key)
+    if isinstance(item, dict):
+        return item.get("name")
+    return None
+
+def _localized_gear_name(gear: dict) -> str:
+    key = gear.get("__splatoon3ink_id")
+    name = _locale_name("gear", key)
+    return name or gear.get("name") or "不明"
+
+def _localized_power_name(power: dict) -> str:
+    key = power.get("__splatoon3ink_id")
+    name = _locale_name("powers", key)
+    return name or power.get("name") or "不明"
+
+def _get_current_fest_record(data: dict) -> dict | None:
+    if not data:
+        return None
+    region = data.get("JP") or {}
+    records = region.get("data", {}).get("festRecords", {}).get("nodes", [])
+    current = _find_current_item(records)
+    return current
+
+
+def _is_fest_active() -> bool:
+    data = get_festivals_data()
+    current = _get_current_fest_record(data or {})
+    return current is not None
+
 def _get_salmon_payload() -> tuple[discord.Embed | None, list[discord.File] | None, str | None]:
     data = get_salmon_schedule()
     if not data:
@@ -556,7 +881,6 @@ def _get_salmon_payload() -> tuple[discord.Embed | None, list[discord.File] | No
     is_big_run = bool(current.get("is_big_run"))
 
     embed = discord.Embed(title="【サーモンラン】", color=0xFF8C00)
-    embed.set_author(name="現在のサーモンラン情報")
     embed.add_field(name="時間", value=f"{start_time}～{end_time}", inline=True)
     embed.add_field(name="ステージ", value=f"**{stage_name}**", inline=True)
     embed.add_field(name="オカシラ", value=f"**{boss_name}**", inline=True)
@@ -612,16 +936,7 @@ def _get_salmon_payload() -> tuple[discord.Embed | None, list[discord.File] | No
 
 def _get_current_event_item(data: dict) -> dict | None:
     results = data.get("results") or []
-    now = datetime.now().astimezone()
-    for item in results:
-        try:
-            start_time = _parse_iso_datetime(item.get("start_time", ""))
-            end_time = _parse_iso_datetime(item.get("end_time", ""))
-        except Exception:
-            continue
-        if start_time <= now < end_time:
-            return item
-    return None
+    return _find_current_item(results)
 
 def _build_event_payload_from_item(
     item: dict,
@@ -644,9 +959,6 @@ def _build_event_payload_from_item(
         end_time = "不明"
 
     embed = discord.Embed(title="【イベントマッチ】", color=0xFF69B4)
-    embed.set_author(name=title_prefix)
-    if status_label:
-        embed.add_field(name="ステータス", value=status_label, inline=True)
     embed.add_field(name="時間", value=f"{start_time}～{end_time}", inline=True)
     embed.add_field(name="イベント", value=f"**{event_name}**", inline=False)
     if event_desc:
@@ -709,6 +1021,189 @@ def _get_event_payload() -> tuple[discord.Embed | None, list[discord.File] | Non
 
     return _build_event_payload_from_item(results[0], "イベントマッチ情報", None)
 
+def _resolve_notify_channel_id(state: dict, state_key: str, env_value: int) -> int:
+    value = int(state.get(state_key) or env_value or 0)
+    if value:
+        return value
+    return int(state.get("stage_notify_channel_id") or STAGE_NOTIFY_CHANNEL_ID or 0)
+
+def _get_current_salmon_item(data: dict) -> dict | None:
+    results = data.get("results") or []
+    return _find_current_item(results)
+
+def _get_current_team_contest_item(data: dict) -> dict | None:
+    results = data.get("results") or []
+    return _find_current_item(results)
+
+def _gear_payload_hash(gesotown: dict) -> str:
+    pickup = gesotown.get("pickupBrand") or {}
+    limited = gesotown.get("limitedGears") or []
+    parts: list[str] = []
+    parts.append(str(pickup.get("saleEndTime") or ""))
+    brand = pickup.get("brand") or {}
+    parts.append(str(brand.get("name") or ""))
+    for gear in pickup.get("brandGears") or []:
+        g = gear.get("gear") or {}
+        parts.append(str(g.get("name") or ""))
+        parts.append(str(gear.get("price") or ""))
+    for gear in limited:
+        g = gear.get("gear") or {}
+        parts.append(str(gear.get("saleEndTime") or ""))
+        parts.append(str(g.get("name") or ""))
+        parts.append(str(gear.get("price") or ""))
+    raw = "|".join(parts)
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+def _build_gear_payloads(data: dict) -> tuple[list[discord.Embed] | None, list[discord.File] | None, str | None]:
+    try:
+        gesotown = data.get("data", {}).get("gesotown", {})
+    except Exception:
+        return None, None, "データの取得に失敗しました。"
+
+    pickup = gesotown.get("pickupBrand") or {}
+    limited = gesotown.get("limitedGears") or []
+
+    embed = discord.Embed(title="【ギア更新】", color=0x4CAF50)
+
+    sale_end = pickup.get("saleEndTime") or ""
+    try:
+        sale_end_fmt = _format_mmdd_hhmm(sale_end)
+    except Exception:
+        sale_end_fmt = "不明"
+
+    brand = pickup.get("brand") or {}
+    brand_name = brand.get("name") or "不明"
+    power = brand.get("usualGearPower") or {}
+    power_name = _localized_power_name(power)
+    embed.add_field(
+        name="注目ブランド",
+        value=f"{brand_name}\n得意ギアパワー: {power_name}\n終了: {sale_end_fmt}",
+        inline=False,
+    )
+
+    brand_gears = pickup.get("brandGears") or []
+    files_by_name: dict[str, discord.File] = {}
+    embeds: list[discord.Embed] = [embed]
+
+    pickup_items: list[dict] = []
+    if brand_gears:
+        lines = []
+        for g in brand_gears:
+            gear = g.get("gear") or {}
+            name = _localized_gear_name(gear)
+            price = g.get("price") or "?"
+            lines.append(f"- {name} ({price}G)")
+            image_url = (gear.get("image") or {}).get("url")
+            if image_url:
+                pickup_items.append({"name": name, "image_url": image_url})
+        embed.add_field(name="ピックアップ", value="\n".join(lines), inline=False)
+
+    limited_items: list[dict] = []
+    if limited:
+        lines = []
+        for g in limited:
+            gear = g.get("gear") or {}
+            name = _localized_gear_name(gear)
+            price = g.get("price") or "?"
+            lines.append(f"- {name} ({price}G)")
+            image_url = (gear.get("image") or {}).get("url")
+            if image_url:
+                limited_items.append({"name": name, "image_url": image_url})
+        embed.add_field(name="限定", value="\n".join(lines), inline=False)
+
+    collage = _render_gear_collage_sections_bytes(
+        [("ピックアップ", pickup_items), ("限定", limited_items)]
+    )
+    if collage:
+        filename = f"gear_all_{hashlib.md5(collage).hexdigest()}.png"
+        embed.set_image(url=f"attachment://{filename}")
+        files_by_name[filename] = discord.File(fp=io.BytesIO(collage), filename=filename)
+
+    return embeds, list(files_by_name.values()), None
+
+def _build_coop_monthly_payload(data: dict) -> tuple[discord.Embed | None, list[discord.File] | None, str | None]:
+    try:
+        monthly = data.get("data", {}).get("coopResult", {}).get("monthlyGear") or {}
+    except Exception:
+        return None, None, "データの取得に失敗しました。"
+
+    name = _localized_gear_name(monthly)
+    embed = discord.Embed(title="【サーモンラン 月替わりギア】", color=0xFF8C00)
+    embed.add_field(name="ギア", value=name, inline=True)
+
+    image_url = (monthly.get("image") or {}).get("url")
+    if image_url:
+        embed.set_thumbnail(url=image_url)
+
+    files_by_name: dict[str, discord.File] = {}
+    return embed, list(files_by_name.values()), None
+
+def _build_xrank_text(data: dict, top_n: int = 100) -> tuple[str, str]:
+    cur = data.get("data", {}).get("xRanking", {}).get("currentSeason", {}) if data else {}
+    season_name = cur.get("name") or "Xランキング"
+    last_update = cur.get("lastUpdateTime") or ""
+
+    try:
+        last_update_fmt = _format_mmdd_hhmm(last_update)
+    except Exception:
+        last_update_fmt = "不明"
+
+    mode_map = {
+        "xRankingAr": "ガチエリア",
+        "xRankingCl": "ガチアサリ",
+        "xRankingGl": "ガチホコ",
+        "xRankingLf": "ガチヤグラ",
+    }
+
+    lines = [f"{season_name}", f"更新: {last_update_fmt}", ""]
+    for key, label in mode_map.items():
+        nodes = (cur.get(key) or {}).get("nodes") or []
+        lines.append(f"■ {label}")
+        for n in nodes[:top_n]:
+            rank = n.get("rank")
+            name = n.get("name") or "?"
+            power = n.get("xPower")
+            if power is None:
+                power_text = "?"
+            else:
+                power_text = f"{power:.1f}" if isinstance(power, (int, float)) else str(power)
+            lines.append(f"{rank}. {name} ({power_text})")
+        lines.append("")
+
+    return "\n".join(lines).strip(), last_update_fmt
+
+def _build_fest_payload_from_record(record: dict) -> tuple[discord.Embed | None, list[discord.File] | None, str | None]:
+    try:
+        start_time = _format_mmdd_hhmm(record.get("startTime", ""))
+        end_time = _format_mmdd_hhmm(record.get("endTime", ""))
+    except Exception:
+        start_time = "不明"
+        end_time = "不明"
+
+    title = record.get("title") or "フェス"
+    embed = discord.Embed(title="【フェス】", color=0xFF3D6E)
+    embed.add_field(name="フェステーマ", value=title, inline=False)
+    embed.add_field(name="時間", value=f"{start_time}～{end_time}", inline=True)
+
+    teams = record.get("teams") or []
+    team_names = [t.get("teamName") for t in teams if isinstance(t, dict) and t.get("teamName")]
+    if team_names:
+        embed.add_field(name="チーム", value="\n".join(f"- {n}" for n in team_names), inline=False)
+
+    image_url = (record.get("image") or {}).get("url")
+    if image_url:
+        embed.set_image(url=image_url)
+
+    files_by_name: dict[str, discord.File] = {}
+    fest_icon_path = _find_local_image_by_name("フェス")
+    if fest_icon_path:
+        filename = _safe_attachment_filename(fest_icon_path, prefix="fest")
+        embed.set_thumbnail(url=f"attachment://{filename}")
+        files_by_name[filename] = discord.File(fest_icon_path, filename=filename)
+
+    return embed, list(files_by_name.values()), None
+
+
 def _get_team_contest_payload() -> tuple[discord.Embed | None, list[discord.File] | None, str | None]:
     data = get_team_contest_schedule()
     if not data:
@@ -729,7 +1224,6 @@ def _get_team_contest_payload() -> tuple[discord.Embed | None, list[discord.File
     end_time = _format_mmdd_hhmm(contest.get("end_time", ""))
 
     embed = discord.Embed(title="【バイトチームコンテスト】", color=0xFFB000)
-    embed.set_author(name="バイトチームコンテスト情報")
     embed.add_field(name="時間", value=f"{start_time}～{end_time}", inline=True)
     embed.add_field(name="ステージ", value=f"**{stage_name}**", inline=True)
     if boss_name != "不明":
@@ -775,15 +1269,15 @@ async def _send_stage_embed(ctx, schedule_index: int, title: str):
         return
     await ctx.send(embeds=embeds, files=files)
 
-@bot.command()
-async def now(ctx):
-    """/now で現在のステージを通知"""
-    await _send_stage_embed(ctx, schedule_index=0, title="現在のステージ情報")
-
 @bot.command(name="next")
 async def next_stage(ctx):
     """/next で次のステージを通知"""
     await _send_stage_embed(ctx, schedule_index=1, title="つぎのステージ情報")
+
+@bot.command()
+async def now(ctx):
+    """/now で現在のステージを通知"""
+    await _send_stage_embed(ctx, schedule_index=0, title="現在のステージ情報")
 
 @bot.tree.command(name="now", description="現在のステージを表示します")
 async def now_slash(interaction: discord.Interaction):
@@ -825,6 +1319,100 @@ async def event_slash(interaction: discord.Interaction):
         return
     await interaction.response.send_message(embed=embed, files=files)
 
+@bot.tree.command(name="gear", description="ゲソタウンのギア更新情報を表示します")
+async def gear_slash(interaction: discord.Interaction):
+    data = get_gear_data()
+    if not data:
+        await interaction.response.send_message("データの取得に失敗しました。", ephemeral=True)
+        return
+    embeds, files, error = _build_gear_payloads(data)
+    if error:
+        await interaction.response.send_message(error, ephemeral=True)
+        return
+    await interaction.response.send_message(embeds=embeds, files=files)
+
+@bot.tree.command(name="monthly_gear", description="サーモンランの月替わりギアを表示します")
+async def monthly_gear_slash(interaction: discord.Interaction):
+    data = get_coop_data()
+    if not data:
+        await interaction.response.send_message("データの取得に失敗しました。", ephemeral=True)
+        return
+    embed, files, error = _build_coop_monthly_payload(data)
+    if error:
+        await interaction.response.send_message(error, ephemeral=True)
+        return
+    await interaction.response.send_message(embed=embed, files=files)
+
+@bot.tree.command(name="fest", description="フェス情報を表示します")
+async def fest_slash(interaction: discord.Interaction):
+    data = get_festivals_data()
+    if not data:
+        await interaction.response.send_message("データの取得に失敗しました。", ephemeral=True)
+        return
+    record = _get_current_fest_record(data)
+    if not record:
+        await interaction.response.send_message("現在開催中のフェスはありません。", ephemeral=True)
+        return
+    embed, files, error = _build_fest_payload_from_record(record)
+    if error:
+        await interaction.response.send_message(error, ephemeral=True)
+        return
+    await interaction.response.send_message(embed=embed, files=files)
+
+
+@bot.tree.command(name="xrank", description="Xランキング（タカオカ）のトップ100を表示します")
+async def xrank_slash(interaction: discord.Interaction):
+    data = get_xrank_data()
+    if not data:
+        await interaction.response.send_message("データの取得に失敗しました。", ephemeral=True)
+        return
+    text, last_update_fmt = _build_xrank_text(data, top_n=100)
+    if not text:
+        await interaction.response.send_message("データの取得に失敗しました。", ephemeral=True)
+        return
+    embed = discord.Embed(title="【Xランキング トップ100】", color=0x4DA3FF)
+    embed.add_field(name="更新", value=last_update_fmt, inline=True)
+    file_obj = discord.File(fp=io.BytesIO(text.encode("utf-8")), filename="xrank_top100.txt")
+    await interaction.response.send_message(embed=embed, file=file_obj)
+
+@bot.tree.command(name="help", description="コマンド一覧を表示します")
+async def help_slash(interaction: discord.Interaction):
+    embed = discord.Embed(title="コマンド一覧", color=0x6C8EBF)
+    embed.add_field(
+        name="表示",
+        value=(
+            "/next\n"
+            "/salmon\n"
+            "/team_contest\n"
+            "/event\n"
+            "/fest\n"
+            "/gear\n"
+            "/monthly_gear\n"
+            "/xrank"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="通知チャンネル設定",
+        value=(
+            "/notify_here\n"
+            "/event_notify_here\n"
+            "/salmon_notify_here\n"
+            "/team_contest_notify_here\n"
+            "/fest_notify_here\n"
+            "/gear_notify_here\n"
+            "/monthly_gear_notify_here\n"
+            "/xrank_notify_here"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="通知テスト",
+        value="なし",
+        inline=False,
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 @bot.tree.command(name="notify_here", description="ステージ自動通知の送信先をこのチャンネルに設定します")
 async def notify_here_slash(interaction: discord.Interaction):
     state = _load_state()
@@ -835,14 +1423,6 @@ async def notify_here_slash(interaction: discord.Interaction):
     _save_state(state)
     await interaction.response.send_message("このチャンネルをステージ自動通知の送信先に設定しました。", ephemeral=True)
 
-@bot.tree.command(name="notify_test", description="ステージ自動通知をテスト送信します")
-async def notify_test_slash(interaction: discord.Interaction):
-    embeds, files, error = _get_stage_payload(schedule_index=0, title_prefix="現在のステージ情報")
-    if error:
-        await interaction.response.send_message(error, ephemeral=True)
-        return
-    await interaction.response.send_message("送信します。", ephemeral=True)
-    await interaction.channel.send(embeds=embeds, files=files)
 
 @bot.tree.command(name="event_notify_here", description="イベントマッチ自動通知の送信先をこのチャンネルに設定します")
 async def event_notify_here_slash(interaction: discord.Interaction):
@@ -854,14 +1434,66 @@ async def event_notify_here_slash(interaction: discord.Interaction):
     _save_state(state)
     await interaction.response.send_message("このチャンネルをイベントマッチ自動通知の送信先に設定しました。", ephemeral=True)
 
-@bot.tree.command(name="event_notify_test", description="イベントマッチ自動通知をテスト送信します")
-async def event_notify_test_slash(interaction: discord.Interaction):
-    embed, files, error = _get_event_payload()
-    if error:
-        await interaction.response.send_message(error, ephemeral=True)
+@bot.tree.command(name="salmon_notify_here", description="サーモンラン自動通知の送信先をこのチャンネルに設定します")
+async def salmon_notify_here_slash(interaction: discord.Interaction):
+    state = _load_state()
+    if interaction.channel_id is None:
+        await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
         return
-    await interaction.response.send_message("送信します。", ephemeral=True)
-    await interaction.channel.send(embed=embed, files=files)
+    state["salmon_notify_channel_id"] = int(interaction.channel_id)
+    _save_state(state)
+    await interaction.response.send_message("このチャンネルをサーモンラン自動通知の送信先に設定しました。", ephemeral=True)
+
+@bot.tree.command(name="team_contest_notify_here", description="バイトチームコンテスト自動通知の送信先をこのチャンネルに設定します")
+async def team_contest_notify_here_slash(interaction: discord.Interaction):
+    state = _load_state()
+    if interaction.channel_id is None:
+        await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
+        return
+    state["team_contest_notify_channel_id"] = int(interaction.channel_id)
+    _save_state(state)
+    await interaction.response.send_message("このチャンネルをバイトチームコンテスト自動通知の送信先に設定しました。", ephemeral=True)
+
+@bot.tree.command(name="fest_notify_here", description="フェス自動通知の送信先をこのチャンネルに設定します")
+async def fest_notify_here_slash(interaction: discord.Interaction):
+    state = _load_state()
+    if interaction.channel_id is None:
+        await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
+        return
+    state["fest_notify_channel_id"] = int(interaction.channel_id)
+    _save_state(state)
+    await interaction.response.send_message("このチャンネルをフェス自動通知の送信先に設定しました。", ephemeral=True)
+
+@bot.tree.command(name="gear_notify_here", description="ギア更新自動通知の送信先をこのチャンネルに設定します")
+async def gear_notify_here_slash(interaction: discord.Interaction):
+    state = _load_state()
+    if interaction.channel_id is None:
+        await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
+        return
+    state["gear_notify_channel_id"] = int(interaction.channel_id)
+    _save_state(state)
+    await interaction.response.send_message("このチャンネルをギア更新自動通知の送信先に設定しました。", ephemeral=True)
+
+@bot.tree.command(name="monthly_gear_notify_here", description="サーモンラン月替わりギア自動通知の送信先をこのチャンネルに設定します")
+async def monthly_gear_notify_here_slash(interaction: discord.Interaction):
+    state = _load_state()
+    if interaction.channel_id is None:
+        await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
+        return
+    state["coop_monthly_notify_channel_id"] = int(interaction.channel_id)
+    _save_state(state)
+    await interaction.response.send_message("このチャンネルをサーモンラン月替わりギア自動通知の送信先に設定しました。", ephemeral=True)
+
+@bot.tree.command(name="xrank_notify_here", description="Xランキング自動通知の送信先をこのチャンネルに設定します")
+async def xrank_notify_here_slash(interaction: discord.Interaction):
+    state = _load_state()
+    if interaction.channel_id is None:
+        await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
+        return
+    state["xrank_notify_channel_id"] = int(interaction.channel_id)
+    _save_state(state)
+    await interaction.response.send_message("このチャンネルをXランキング自動通知の送信先に設定しました。", ephemeral=True)
+
 
 _did_sync_app_commands = False
 
@@ -870,6 +1502,8 @@ async def _stage_auto_notify_loop():
     state = _load_state()
     channel_id = int(state.get("stage_notify_channel_id") or STAGE_NOTIFY_CHANNEL_ID or 0)
     if not channel_id:
+        return
+    if _is_fest_active():
         return
 
     data = get_stages()
@@ -897,16 +1531,27 @@ async def _stage_auto_notify_loop():
     embeds, files, error = _get_stage_payload(schedule_index=0, title_prefix="現在のステージ情報")
     if error:
         return
-    await channel.send(embeds=embeds, files=files)
+    last_message_id = state.get("stage_last_message_id")
+    if last_message_id:
+        try:
+            old_msg = await channel.fetch_message(int(last_message_id))
+            await old_msg.delete()
+        except Exception:
+            pass
+
+    sent = await channel.send(embeds=embeds, files=files)
 
     state["stage_last_rotation_key"] = rotation_key
+    state["stage_last_message_id"] = int(sent.id)
     _save_state(state)
 
 @tasks.loop(minutes=1)
 async def _event_auto_notify_loop():
     state = _load_state()
-    channel_id = int(state.get("event_notify_channel_id") or EVENT_NOTIFY_CHANNEL_ID or 0)
+    channel_id = _resolve_notify_channel_id(state, "event_notify_channel_id", EVENT_NOTIFY_CHANNEL_ID)
     if not channel_id:
+        return
+    if _is_fest_active():
         return
 
     data = get_event_schedule()
@@ -943,6 +1588,246 @@ async def _event_auto_notify_loop():
     state["event_last_rotation_key"] = rotation_key
     _save_state(state)
 
+@tasks.loop(minutes=1)
+async def _salmon_auto_notify_loop():
+    state = _load_state()
+    channel_id = _resolve_notify_channel_id(state, "salmon_notify_channel_id", SALMON_NOTIFY_CHANNEL_ID)
+    if not channel_id:
+        return
+    if _is_fest_active():
+        return
+
+    data = get_salmon_schedule()
+    if not data:
+        return
+
+    current = _get_current_salmon_item(data)
+    if not current:
+        return
+
+    rotation_key = current.get("start_time")
+    if not rotation_key:
+        return
+
+    last_key = state.get("salmon_last_rotation_key")
+    if last_key is None:
+        state["salmon_last_rotation_key"] = rotation_key
+        _save_state(state)
+        if not SALMON_NOTIFY_ON_START:
+            return
+
+    if last_key == rotation_key:
+        return
+
+    channel = await _get_text_channel(channel_id)
+    if channel is None:
+        return
+
+    embed, files, error = _get_salmon_payload()
+    if error:
+        return
+    await channel.send(embed=embed, files=files)
+
+    state["salmon_last_rotation_key"] = rotation_key
+    _save_state(state)
+
+@tasks.loop(minutes=1)
+async def _team_contest_auto_notify_loop():
+    state = _load_state()
+    channel_id = _resolve_notify_channel_id(state, "team_contest_notify_channel_id", TEAM_CONTEST_NOTIFY_CHANNEL_ID)
+    if not channel_id:
+        return
+    if _is_fest_active():
+        return
+
+    data = get_team_contest_schedule()
+    if not data:
+        return
+
+    current = _get_current_team_contest_item(data)
+    if not current:
+        return
+
+    rotation_key = current.get("start_time")
+    if not rotation_key:
+        return
+
+    last_key = state.get("team_contest_last_rotation_key")
+    if last_key is None:
+        state["team_contest_last_rotation_key"] = rotation_key
+        _save_state(state)
+        if not TEAM_CONTEST_NOTIFY_ON_START:
+            return
+
+    if last_key == rotation_key:
+        return
+
+    channel = await _get_text_channel(channel_id)
+    if channel is None:
+        return
+
+    embed, files, error = _get_team_contest_payload()
+    if error:
+        return
+    await channel.send(embed=embed, files=files)
+
+    state["team_contest_last_rotation_key"] = rotation_key
+    _save_state(state)
+
+@tasks.loop(minutes=1)
+async def _fest_auto_notify_loop():
+    state = _load_state()
+    channel_id = _resolve_notify_channel_id(state, "fest_notify_channel_id", FEST_NOTIFY_CHANNEL_ID)
+    if not channel_id:
+        return
+
+    data = get_festivals_data()
+    if not data:
+        return
+
+    current = _get_current_fest_record(data)
+    if not current:
+        return
+
+    rotation_key = current.get("startTime")
+    if not rotation_key:
+        return
+
+    last_key = state.get("fest_last_rotation_key")
+    if last_key is None:
+        state["fest_last_rotation_key"] = rotation_key
+        _save_state(state)
+        if not FEST_NOTIFY_ON_START:
+            return
+
+    if last_key == rotation_key:
+        return
+
+    channel = await _get_text_channel(channel_id)
+    if channel is None:
+        return
+
+    embed, files, error = _build_fest_payload_from_record(current)
+    if error:
+        return
+    await channel.send(embed=embed, files=files)
+
+    state["fest_last_rotation_key"] = rotation_key
+    _save_state(state)
+
+
+@tasks.loop(minutes=10)
+async def _gear_auto_notify_loop():
+    state = _load_state()
+    channel_id = _resolve_notify_channel_id(state, "gear_notify_channel_id", GEAR_NOTIFY_CHANNEL_ID)
+    if not channel_id:
+        return
+    if _is_fest_active():
+        return
+
+    gear_data = get_gear_data()
+    if not gear_data:
+        return
+
+    try:
+        gesotown = gear_data.get("data", {}).get("gesotown", {})
+    except Exception:
+        return
+
+    gear_hash = _gear_payload_hash(gesotown)
+    last_hash = state.get("gear_last_hash")
+    if last_hash is None:
+        state["gear_last_hash"] = gear_hash
+        _save_state(state)
+        if not GEAR_NOTIFY_ON_START:
+            gear_hash = None
+
+    channel = await _get_text_channel(channel_id)
+    if channel is None:
+        return
+
+    if gear_hash and last_hash != gear_hash:
+        embeds, files, error = _build_gear_payloads(gear_data)
+        if not error:
+            await channel.send(embeds=embeds, files=files)
+        state["gear_last_hash"] = gear_hash
+        _save_state(state)
+
+    coop_data = get_coop_data()
+    if not coop_data:
+        return
+    monthly = coop_data.get("data", {}).get("coopResult", {}).get("monthlyGear") or {}
+    monthly_id = monthly.get("__splatoon3ink_id") or monthly.get("name")
+    if not monthly_id:
+        return
+
+    last_monthly = state.get("coop_monthly_gear_id")
+    if last_monthly is None:
+        state["coop_monthly_gear_id"] = monthly_id
+        _save_state(state)
+        return
+
+    if last_monthly != monthly_id:
+        monthly_channel_id = _resolve_notify_channel_id(
+            state,
+            "coop_monthly_notify_channel_id",
+            COOP_MONTHLY_NOTIFY_CHANNEL_ID,
+        )
+        if monthly_channel_id:
+            monthly_channel = await _get_text_channel(monthly_channel_id)
+            if monthly_channel is not None:
+                embed, files, error = _build_coop_monthly_payload(coop_data)
+                if not error:
+                    await monthly_channel.send(embed=embed, files=files)
+        state["coop_monthly_gear_id"] = monthly_id
+        _save_state(state)
+
+@tasks.loop(minutes=1)
+async def _xrank_daily_notify_loop():
+    state = _load_state()
+    channel_id = _resolve_notify_channel_id(state, "xrank_notify_channel_id", XRANK_NOTIFY_CHANNEL_ID)
+    if not channel_id:
+        return
+    if _is_fest_active():
+        return
+
+    data = get_xrank_data()
+    if not data:
+        return
+
+    cur = data.get("data", {}).get("xRanking", {}).get("currentSeason", {}) if data else {}
+    end_time_raw = cur.get("endTime") or ""
+    try:
+        end_time = _parse_iso_datetime(end_time_raw).astimezone()
+    except Exception:
+        return
+
+    now = datetime.now().astimezone()
+    if not (now.year == end_time.year and now.month == end_time.month and now.day == end_time.day):
+        return
+    if not (now.hour == 0 and now.minute <= 5):
+        return
+
+    today_key = now.strftime("%Y-%m-%d")
+    if state.get("xrank_last_sent_date") == today_key:
+        return
+
+    text, last_update_fmt = _build_xrank_text(data, top_n=100)
+    if not text:
+        return
+
+    channel = await _get_text_channel(channel_id)
+    if channel is None:
+        return
+
+    embed = discord.Embed(title="【Xランキング トップ100】", color=0x4DA3FF)
+    embed.add_field(name="更新", value=last_update_fmt, inline=True)
+    file_obj = discord.File(fp=io.BytesIO(text.encode("utf-8")), filename="xrank_top100.txt")
+    await channel.send(embed=embed, file=file_obj)
+
+    state["xrank_last_sent_date"] = today_key
+    _save_state(state)
+
 @bot.event
 async def on_ready():
     global _did_sync_app_commands
@@ -955,6 +1840,16 @@ async def on_ready():
         _stage_auto_notify_loop.start()
     if not _event_auto_notify_loop.is_running():
         _event_auto_notify_loop.start()
+    if not _salmon_auto_notify_loop.is_running():
+        _salmon_auto_notify_loop.start()
+    if not _team_contest_auto_notify_loop.is_running():
+        _team_contest_auto_notify_loop.start()
+    if not _fest_auto_notify_loop.is_running():
+        _fest_auto_notify_loop.start()
+    if not _gear_auto_notify_loop.is_running():
+        _gear_auto_notify_loop.start()
+    if not _xrank_daily_notify_loop.is_running():
+        _xrank_daily_notify_loop.start()
 
 if __name__ == "__main__":
     if not os.getenv("DISCORD_TOKEN"):
