@@ -14,6 +14,7 @@ TOKEN = os.getenv("DISCORD_TOKEN", "")
 API_URL = "https://spla3.yuu26.com/api/schedule"
 SALMON_API_URL = "https://spla3.yuu26.com/api/coop-grouping/schedule"
 TEAM_CONTEST_API_URL = "https://spla3.yuu26.com/api/coop-grouping-team-contest/schedule"
+EVENT_API_URL = "https://spla3.yuu26.com/api/event/schedule"
 USER_AGENT = "DiscordBot_SplaStageInfo (Contact: chihalu)" # 連絡先を記載
 
 # Botの基本設定
@@ -22,9 +23,12 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='/', intents=intents)
 
 IMG_DIR = os.path.join(os.path.dirname(__file__), "img")
+WEAPON_IMG_DIR = os.path.join(os.path.dirname(__file__), "img", "武器")
 STATE_PATH = os.path.join(os.path.dirname(__file__), ".bot_state.json")
 STAGE_NOTIFY_CHANNEL_ID = int(os.getenv("STAGE_NOTIFY_CHANNEL_ID", "0") or "0")
 STAGE_NOTIFY_ON_START = (os.getenv("STAGE_NOTIFY_ON_START", "0") == "1")
+EVENT_NOTIFY_CHANNEL_ID = int(os.getenv("EVENT_NOTIFY_CHANNEL_ID", "0") or "0")
+EVENT_NOTIFY_ON_START = (os.getenv("EVENT_NOTIFY_ON_START", "0") == "1")
 BOT_ACTIVITY_NAME = os.getenv("BOT_ACTIVITY_NAME", "Splatoon")
 
 def _load_state() -> dict:
@@ -110,6 +114,18 @@ def get_team_contest_schedule():
         print(f"Error fetching data: {e}")
         return None
 
+def get_event_schedule():
+    """APIからイベントマッチのスケジュール情報を取得する"""
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        response = requests.get(EVENT_API_URL, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+
 def _format_hhmm(iso_datetime: str) -> str:
     return _parse_iso_datetime(iso_datetime).astimezone().strftime("%H:%M")
 
@@ -157,6 +173,19 @@ def _find_local_image_by_name(name: str) -> str | None:
 
     for ext in (".webp", ".png", ".jpg", ".jpeg", ".gif"):
         path = os.path.join(IMG_DIR, f"{name}{ext}")
+        if os.path.exists(path):
+            return path
+
+    return None
+
+def _find_weapon_image_by_name(name: str) -> str | None:
+    if not name or name == "不明":
+        return None
+    if not os.path.isdir(WEAPON_IMG_DIR):
+        return None
+
+    for ext in (".png", ".webp", ".jpg", ".jpeg", ".gif"):
+        path = os.path.join(WEAPON_IMG_DIR, f"{name}{ext}")
         if os.path.exists(path):
             return path
 
@@ -335,6 +364,76 @@ def _render_stage_card_bytes(
     card.convert("RGB").save(out, format="PNG", optimize=True)
     return out.getvalue()
 
+def _render_salmon_stage_with_weapons_bytes(stage_path: str | None, weapon_names: list[str]) -> bytes | None:
+    try:
+        from PIL import Image, ImageDraw  # type: ignore
+    except Exception:
+        return None
+
+    if not stage_path:
+        return None
+
+    icon_paths = []
+    for name in weapon_names:
+        if name == "不明":
+            continue
+        if name == "ランダム":
+            icon_path = _find_weapon_image_by_name("ランダム")
+        else:
+            icon_path = _find_weapon_image_by_name(name)
+        if icon_path:
+            icon_paths.append(icon_path)
+
+    if not icon_paths:
+        return None
+
+    try:
+        stage_img = Image.open(stage_path).convert("RGBA")
+    except Exception:
+        return None
+
+    target_w = 1000
+    target_h = 520
+    canvas = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 255))
+
+    iw, ih = stage_img.size
+    scale = max(target_w / iw, target_h / ih)
+    nw, nh = int(iw * scale), int(ih * scale)
+    resized = stage_img.resize((nw, nh), Image.Resampling.LANCZOS)
+    left = (nw - target_w) // 2
+    top = (nh - target_h) // 2
+    cropped = resized.crop((left, top, left + target_w, top + target_h))
+    canvas.alpha_composite(cropped, (0, 0))
+
+    bar_h = 150
+    overlay = Image.new("RGBA", (target_w, bar_h), (0, 0, 0, 166))
+    canvas.alpha_composite(overlay, (0, target_h - bar_h))
+
+    max_icons = 4
+    icons = icon_paths[:max_icons]
+    icon_size = 110
+    gap = 18
+    total_w = len(icons) * icon_size + (len(icons) - 1) * gap
+    start_x = (target_w - total_w) // 2
+    y = target_h - bar_h + (bar_h - icon_size) // 2
+
+    for idx, path in enumerate(icons):
+        try:
+            icon = Image.open(path).convert("RGBA")
+        except Exception:
+            continue
+        iw, ih = icon.size
+        scale = min(icon_size / iw, icon_size / ih)
+        nw, nh = int(iw * scale), int(ih * scale)
+        icon = icon.resize((nw, nh), Image.Resampling.LANCZOS)
+        x = start_x + idx * (icon_size + gap) + (icon_size - nw) // 2
+        y2 = y + (icon_size - nh) // 2
+        canvas.alpha_composite(icon, (x, y2))
+
+    out = io.BytesIO()
+    canvas.convert("RGB").save(out, format="PNG", optimize=True)
+    return out.getvalue()
+
 def _build_mode_embeds(result: dict, schedule_index: int, title_prefix: str) -> tuple[list[discord.Embed], list[discord.File]]:
     # 取得したいモードのリスト
     modes = {
@@ -476,17 +575,31 @@ def _get_salmon_payload() -> tuple[discord.Embed | None, list[discord.File] | No
     files_by_name: dict[str, discord.File] = {}
 
     stage_path = _find_local_image_by_name(stage_name)
-    if stage_path:
+    salmon_card = _render_salmon_stage_with_weapons_bytes(stage_path, weapon_names)
+    if salmon_card:
+        filename = f"salmon_{hashlib.md5(salmon_card).hexdigest()}.png"
+        embed.set_image(url=f"attachment://{filename}")
+        files_by_name[filename] = discord.File(fp=io.BytesIO(salmon_card), filename=filename)
+    elif stage_path:
         filename = _safe_attachment_filename(stage_path, prefix="salmon_stage")
         embed.set_image(url=f"attachment://{filename}")
         files_by_name[filename] = discord.File(stage_path, filename=filename)
 
-    boss_path = _find_local_image_by_name(boss_name)
-    if boss_path:
-        filename = _safe_attachment_filename(boss_path, prefix="salmon_boss")
-        embed.set_thumbnail(url=f"attachment://{filename}")
-        if filename not in files_by_name:
-            files_by_name[filename] = discord.File(boss_path, filename=filename)
+    random_weapon = any(n == "ランダム" for n in weapon_names)
+    if random_weapon:
+        random_path = _find_weapon_image_by_name("ランダム")
+        if random_path:
+            filename = _safe_attachment_filename(random_path, prefix="salmon_random")
+            embed.set_thumbnail(url=f"attachment://{filename}")
+            if filename not in files_by_name:
+                files_by_name[filename] = discord.File(random_path, filename=filename)
+    else:
+        boss_path = _find_local_image_by_name(boss_name)
+        if boss_path:
+            filename = _safe_attachment_filename(boss_path, prefix="salmon_boss")
+            embed.set_thumbnail(url=f"attachment://{filename}")
+            if filename not in files_by_name:
+                files_by_name[filename] = discord.File(boss_path, filename=filename)
 
     salmon_icon_path = _find_local_image_by_name("サーモンラン")
     if salmon_icon_path:
@@ -496,6 +609,105 @@ def _get_salmon_payload() -> tuple[discord.Embed | None, list[discord.File] | No
             files_by_name[filename] = discord.File(salmon_icon_path, filename=filename)
 
     return embed, list(files_by_name.values()), None
+
+def _get_current_event_item(data: dict) -> dict | None:
+    results = data.get("results") or []
+    now = datetime.now().astimezone()
+    for item in results:
+        try:
+            start_time = _parse_iso_datetime(item.get("start_time", ""))
+            end_time = _parse_iso_datetime(item.get("end_time", ""))
+        except Exception:
+            continue
+        if start_time <= now < end_time:
+            return item
+    return None
+
+def _build_event_payload_from_item(
+    item: dict,
+    title_prefix: str,
+    status_label: str | None,
+) -> tuple[discord.Embed | None, list[discord.File] | None, str | None]:
+    rule = _format_rule(item.get("rule"))
+    event = item.get("event") or {}
+    event_name = event.get("name") or "不明"
+    event_desc = event.get("desc") or ""
+    stage_names = _extract_stage_names(item.get("stages"))
+    stage1_name = stage_names[0] if len(stage_names) > 0 else "不明"
+    stage2_name = stage_names[1] if len(stage_names) > 1 else "不明"
+
+    try:
+        start_time = _format_mmdd_hhmm(item.get("start_time", ""))
+        end_time = _format_mmdd_hhmm(item.get("end_time", ""))
+    except Exception:
+        start_time = "不明"
+        end_time = "不明"
+
+    embed = discord.Embed(title="【イベントマッチ】", color=0xFF69B4)
+    embed.set_author(name=title_prefix)
+    if status_label:
+        embed.add_field(name="ステータス", value=status_label, inline=True)
+    embed.add_field(name="時間", value=f"{start_time}～{end_time}", inline=True)
+    embed.add_field(name="イベント", value=f"**{event_name}**", inline=False)
+    if event_desc:
+        embed.add_field(name="説明", value=event_desc, inline=False)
+    embed.add_field(name="ルール", value=f"**{rule}**", inline=True)
+    embed.add_field(name="ステージ", value=f"1. {stage1_name}\n2. {stage2_name}", inline=False)
+
+    files_by_name: dict[str, discord.File] = {}
+    event_icon_path = _find_local_image_by_name("イベントマッチ")
+    if event_icon_path:
+        filename = _safe_attachment_filename(event_icon_path, prefix="event")
+        embed.set_thumbnail(url=f"attachment://{filename}")
+        files_by_name[filename] = discord.File(event_icon_path, filename=filename)
+    stage1_path = _find_local_image_by_name(stage1_name)
+    stage2_path = _find_local_image_by_name(stage2_name)
+    rule_icon_path = _find_local_rule_icon(rule)
+
+    card_bytes = _render_stage_card_bytes(
+        rule_name=rule,
+        rule_icon_path=rule_icon_path,
+        stage1_name=stage1_name,
+        stage1_path=stage1_path,
+        stage2_name=stage2_name,
+        stage2_path=stage2_path,
+    )
+    if card_bytes:
+        filename = f"event_{hashlib.md5(card_bytes).hexdigest()}.png"
+        embed.set_image(url=f"attachment://{filename}")
+        files_by_name[filename] = discord.File(fp=io.BytesIO(card_bytes), filename=filename)
+    else:
+        if stage1_path:
+            filename = _safe_attachment_filename(stage1_path, prefix="event_stage")
+            embed.set_image(url=f"attachment://{filename}")
+            if filename not in files_by_name:
+                files_by_name[filename] = discord.File(stage1_path, filename=filename)
+
+    return embed, list(files_by_name.values()), None
+
+def _get_event_payload() -> tuple[discord.Embed | None, list[discord.File] | None, str | None]:
+    data = get_event_schedule()
+    if not data:
+        return None, None, "データの取得に失敗しました。"
+
+    results = data.get("results") or []
+    if not results:
+        return None, None, "イベントマッチの情報がありません。"
+
+    current = _get_current_event_item(data)
+    if current:
+        return _build_event_payload_from_item(current, "イベントマッチ情報", "開催中")
+
+    now = datetime.now().astimezone()
+    for item in results:
+        try:
+            end_time = _parse_iso_datetime(item.get("end_time", ""))
+        except Exception:
+            continue
+        if now < end_time:
+            return _build_event_payload_from_item(item, "イベントマッチ情報", "次回")
+
+    return _build_event_payload_from_item(results[0], "イベントマッチ情報", None)
 
 def _get_team_contest_payload() -> tuple[discord.Embed | None, list[discord.File] | None, str | None]:
     data = get_team_contest_schedule()
@@ -605,6 +817,14 @@ async def team_contest_slash(interaction: discord.Interaction):
         return
     await interaction.response.send_message(embed=embed, files=files)
 
+@bot.tree.command(name="event", description="イベントマッチを表示します")
+async def event_slash(interaction: discord.Interaction):
+    embed, files, error = _get_event_payload()
+    if error:
+        await interaction.response.send_message(error, ephemeral=True)
+        return
+    await interaction.response.send_message(embed=embed, files=files)
+
 @bot.tree.command(name="notify_here", description="ステージ自動通知の送信先をこのチャンネルに設定します")
 async def notify_here_slash(interaction: discord.Interaction):
     state = _load_state()
@@ -623,6 +843,25 @@ async def notify_test_slash(interaction: discord.Interaction):
         return
     await interaction.response.send_message("送信します。", ephemeral=True)
     await interaction.channel.send(embeds=embeds, files=files)
+
+@bot.tree.command(name="event_notify_here", description="イベントマッチ自動通知の送信先をこのチャンネルに設定します")
+async def event_notify_here_slash(interaction: discord.Interaction):
+    state = _load_state()
+    if interaction.channel_id is None:
+        await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
+        return
+    state["event_notify_channel_id"] = int(interaction.channel_id)
+    _save_state(state)
+    await interaction.response.send_message("このチャンネルをイベントマッチ自動通知の送信先に設定しました。", ephemeral=True)
+
+@bot.tree.command(name="event_notify_test", description="イベントマッチ自動通知をテスト送信します")
+async def event_notify_test_slash(interaction: discord.Interaction):
+    embed, files, error = _get_event_payload()
+    if error:
+        await interaction.response.send_message(error, ephemeral=True)
+        return
+    await interaction.response.send_message("送信します。", ephemeral=True)
+    await interaction.channel.send(embed=embed, files=files)
 
 _did_sync_app_commands = False
 
@@ -663,6 +902,47 @@ async def _stage_auto_notify_loop():
     state["stage_last_rotation_key"] = rotation_key
     _save_state(state)
 
+@tasks.loop(minutes=1)
+async def _event_auto_notify_loop():
+    state = _load_state()
+    channel_id = int(state.get("event_notify_channel_id") or EVENT_NOTIFY_CHANNEL_ID or 0)
+    if not channel_id:
+        return
+
+    data = get_event_schedule()
+    if not data:
+        return
+
+    current = _get_current_event_item(data)
+    if not current:
+        return
+
+    rotation_key = current.get("start_time")
+    if not rotation_key:
+        return
+
+    last_key = state.get("event_last_rotation_key")
+    if last_key is None:
+        state["event_last_rotation_key"] = rotation_key
+        _save_state(state)
+        if not EVENT_NOTIFY_ON_START:
+            return
+
+    if last_key == rotation_key:
+        return
+
+    channel = await _get_text_channel(channel_id)
+    if channel is None:
+        return
+
+    embed, files, error = _build_event_payload_from_item(current, "イベントマッチ開始", "開催中")
+    if error:
+        return
+    await channel.send(embed=embed, files=files)
+
+    state["event_last_rotation_key"] = rotation_key
+    _save_state(state)
+
 @bot.event
 async def on_ready():
     global _did_sync_app_commands
@@ -673,6 +953,8 @@ async def on_ready():
     await bot.change_presence(activity=discord.Game(name=BOT_ACTIVITY_NAME))
     if not _stage_auto_notify_loop.is_running():
         _stage_auto_notify_loop.start()
+    if not _event_auto_notify_loop.is_running():
+        _event_auto_notify_loop.start()
 
 if __name__ == "__main__":
     if not os.getenv("DISCORD_TOKEN"):
