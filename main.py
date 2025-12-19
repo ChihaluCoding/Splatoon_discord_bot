@@ -13,6 +13,7 @@ TOKEN = os.getenv("DISCORD_TOKEN", "")
 
 API_URL = "https://spla3.yuu26.com/api/schedule"
 SALMON_API_URL = "https://spla3.yuu26.com/api/coop-grouping/schedule"
+TEAM_CONTEST_API_URL = "https://spla3.yuu26.com/api/coop-grouping-team-contest/schedule"
 USER_AGENT = "DiscordBot_SplaStageInfo (Contact: chihalu)" # 連絡先を記載
 
 # Botの基本設定
@@ -97,8 +98,30 @@ def get_salmon_schedule():
         print(f"Error fetching data: {e}")
         return None
 
+def get_team_contest_schedule():
+    """APIからバイトチームコンテストのスケジュール情報を取得する"""
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        response = requests.get(TEAM_CONTEST_API_URL, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+
 def _format_hhmm(iso_datetime: str) -> str:
-    return datetime.fromisoformat(iso_datetime).strftime("%H:%M")
+    return _parse_iso_datetime(iso_datetime).astimezone().strftime("%H:%M")
+
+def _parse_iso_datetime(iso_datetime: str) -> datetime:
+    s = iso_datetime or ""
+    # datetime.fromisoformat() は "Z" を直接解釈できないため吸収する
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    return datetime.fromisoformat(s)
+
+def _format_mmdd_hhmm(iso_datetime: str) -> str:
+    return _parse_iso_datetime(iso_datetime).astimezone().strftime("%m/%d %H:%M")
 
 def _format_rule(rule) -> str:
     if isinstance(rule, dict):
@@ -429,8 +452,8 @@ def _get_salmon_payload() -> tuple[discord.Embed | None, list[discord.File] | No
 
     stage_name = stage.get("name") or "不明"
     boss_name = boss.get("name") or "不明"
-    start_time = _format_hhmm(current["start_time"])
-    end_time = _format_hhmm(current["end_time"])
+    start_time = _format_mmdd_hhmm(current["start_time"])
+    end_time = _format_mmdd_hhmm(current["end_time"])
     is_big_run = bool(current.get("is_big_run"))
 
     embed = discord.Embed(title="【サーモンラン】", color=0xFF8C00)
@@ -474,6 +497,65 @@ def _get_salmon_payload() -> tuple[discord.Embed | None, list[discord.File] | No
 
     return embed, list(files_by_name.values()), None
 
+def _get_team_contest_payload() -> tuple[discord.Embed | None, list[discord.File] | None, str | None]:
+    data = get_team_contest_schedule()
+    if not data:
+        return None, None, "データの取得に失敗しました。"
+
+    results = data.get("results") or []
+    if not results:
+        return None, None, "バイトチームコンテストの予定がありません。"
+
+    contest = results[0]
+    stage = contest.get("stage") or {}
+    boss = contest.get("boss") or {}
+    weapons = contest.get("weapons") or []
+
+    stage_name = stage.get("name") or "不明"
+    boss_name = boss.get("name") or "不明"
+    start_time = _format_mmdd_hhmm(contest.get("start_time", ""))
+    end_time = _format_mmdd_hhmm(contest.get("end_time", ""))
+
+    embed = discord.Embed(title="【バイトチームコンテスト】", color=0xFFB000)
+    embed.set_author(name="バイトチームコンテスト情報")
+    embed.add_field(name="時間", value=f"{start_time}～{end_time}", inline=True)
+    embed.add_field(name="ステージ", value=f"**{stage_name}**", inline=True)
+    if boss_name != "不明":
+        embed.add_field(name="オカシラ", value=f"**{boss_name}**", inline=True)
+
+    weapon_names = []
+    for w in weapons:
+        if isinstance(w, dict):
+            weapon_names.append(w.get("name") or "不明")
+        elif isinstance(w, str):
+            weapon_names.append(w)
+    if weapon_names:
+        embed.add_field(name="ブキ", value="\n".join(f"- {n}" for n in weapon_names), inline=False)
+
+    files_by_name: dict[str, discord.File] = {}
+
+    stage_path = _find_local_image_by_name(stage_name)
+    if stage_path:
+        filename = _safe_attachment_filename(stage_path, prefix="team_stage")
+        embed.set_image(url=f"attachment://{filename}")
+        files_by_name[filename] = discord.File(stage_path, filename=filename)
+
+    boss_path = _find_local_image_by_name(boss_name)
+    if boss_path:
+        filename = _safe_attachment_filename(boss_path, prefix="team_boss")
+        embed.set_thumbnail(url=f"attachment://{filename}")
+        if filename not in files_by_name:
+            files_by_name[filename] = discord.File(boss_path, filename=filename)
+
+    team_icon_path = _find_local_image_by_name("バイトチームコンテスト")
+    if team_icon_path:
+        filename = _safe_attachment_filename(team_icon_path, prefix="team")
+        embed.set_footer(text="TEAM CONTEST", icon_url=f"attachment://{filename}")
+        if filename not in files_by_name:
+            files_by_name[filename] = discord.File(team_icon_path, filename=filename)
+
+    return embed, list(files_by_name.values()), None
+
 async def _send_stage_embed(ctx, schedule_index: int, title: str):
     embeds, files, error = _get_stage_payload(schedule_index=schedule_index, title_prefix=title)
     if error:
@@ -510,6 +592,14 @@ async def next_slash(interaction: discord.Interaction):
 @bot.tree.command(name="salmon", description="現在のサーモンランを表示します")
 async def salmon_slash(interaction: discord.Interaction):
     embed, files, error = _get_salmon_payload()
+    if error:
+        await interaction.response.send_message(error, ephemeral=True)
+        return
+    await interaction.response.send_message(embed=embed, files=files)
+
+@bot.tree.command(name="team_contest", description="バイトチームコンテストを表示します")
+async def team_contest_slash(interaction: discord.Interaction):
+    embed, files, error = _get_team_contest_payload()
     if error:
         await interaction.response.send_message(error, ephemeral=True)
         return
