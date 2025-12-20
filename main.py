@@ -7,6 +7,8 @@ import io
 import json
 import requests
 from datetime import datetime
+import time
+import threading
 
 # --- 設定 ---
 TOKEN = os.getenv("DISCORD_TOKEN", "")
@@ -31,6 +33,7 @@ bot = commands.Bot(command_prefix='/', intents=intents)
 IMG_DIR = os.path.join(os.path.dirname(__file__), "img")
 WEAPON_IMG_DIR = os.path.join(os.path.dirname(__file__), "img", "武器")
 STATE_PATH = os.path.join(os.path.dirname(__file__), ".bot_state.json")
+LOCK_DIR = os.path.join(os.path.dirname(__file__), ".locks")
 STAGE_NOTIFY_CHANNEL_ID = int(os.getenv("STAGE_NOTIFY_CHANNEL_ID", "0") or "0")
 STAGE_NOTIFY_ON_START = (os.getenv("STAGE_NOTIFY_ON_START", "0") == "1")
 EVENT_NOTIFY_CHANNEL_ID = int(os.getenv("EVENT_NOTIFY_CHANNEL_ID", "0") or "0")
@@ -65,6 +68,51 @@ def _save_state(state: dict) -> None:
             json.dump(state, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"Error saving state: {e}")
+
+_STATE_LOCK = threading.Lock()
+
+def _update_state(updates: dict) -> None:
+    if not updates:
+        return
+    with _STATE_LOCK:
+        state = _load_state()
+        state.update(updates)
+        _save_state(state)
+
+def _acquire_lock(name: str, ttl_seconds: int = 120) -> bool:
+    try:
+        os.makedirs(LOCK_DIR, exist_ok=True)
+    except Exception:
+        return False
+
+    path = os.path.join(LOCK_DIR, f"{name}.lock")
+    now = time.time()
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        with os.fdopen(fd, "w") as f:
+            f.write(str(now))
+        return True
+    except FileExistsError:
+        try:
+            mtime = os.path.getmtime(path)
+        except Exception:
+            return False
+        if now - mtime > ttl_seconds:
+            try:
+                os.remove(path)
+            except Exception:
+                return False
+            return _acquire_lock(name, ttl_seconds=ttl_seconds)
+        return False
+    except Exception:
+        return False
+
+def _release_lock(name: str) -> None:
+    path = os.path.join(LOCK_DIR, f"{name}.lock")
+    try:
+        os.remove(path)
+    except Exception:
+        pass
 
 async def _get_text_channel(channel_id: int) -> discord.abc.Messageable | None:
     if not channel_id:
@@ -909,21 +957,21 @@ def _get_salmon_payload() -> tuple[discord.Embed | None, list[discord.File] | No
         embed.set_image(url=f"attachment://{filename}")
         files_by_name[filename] = discord.File(stage_path, filename=filename)
 
-    random_weapon = any(n == "ランダム" for n in weapon_names)
-    if random_weapon:
-        random_path = _find_weapon_image_by_name("ランダム")
-        if random_path:
-            filename = _safe_attachment_filename(random_path, prefix="salmon_random")
-            embed.set_thumbnail(url=f"attachment://{filename}")
-            if filename not in files_by_name:
-                files_by_name[filename] = discord.File(random_path, filename=filename)
+    boss_path = _find_local_image_by_name(boss_name)
+    if boss_path:
+        filename = _safe_attachment_filename(boss_path, prefix="salmon_boss")
+        embed.set_thumbnail(url=f"attachment://{filename}")
+        if filename not in files_by_name:
+            files_by_name[filename] = discord.File(boss_path, filename=filename)
     else:
-        boss_path = _find_local_image_by_name(boss_name)
-        if boss_path:
-            filename = _safe_attachment_filename(boss_path, prefix="salmon_boss")
-            embed.set_thumbnail(url=f"attachment://{filename}")
-            if filename not in files_by_name:
-                files_by_name[filename] = discord.File(boss_path, filename=filename)
+        random_weapon = any(n == "ランダム" for n in weapon_names)
+        if random_weapon:
+            random_path = _find_weapon_image_by_name("ランダム")
+            if random_path:
+                filename = _safe_attachment_filename(random_path, prefix="salmon_random")
+                embed.set_thumbnail(url=f"attachment://{filename}")
+                if filename not in files_by_name:
+                    files_by_name[filename] = discord.File(random_path, filename=filename)
 
     salmon_icon_path = _find_local_image_by_name("サーモンラン")
     if salmon_icon_path:
@@ -1415,83 +1463,67 @@ async def help_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="notify_here", description="ステージ自動通知の送信先をこのチャンネルに設定します")
 async def notify_here_slash(interaction: discord.Interaction):
-    state = _load_state()
     if interaction.channel_id is None:
         await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
         return
-    state["stage_notify_channel_id"] = int(interaction.channel_id)
-    _save_state(state)
+    _update_state({"stage_notify_channel_id": int(interaction.channel_id)})
     await interaction.response.send_message("このチャンネルをステージ自動通知の送信先に設定しました。", ephemeral=True)
 
 
 @bot.tree.command(name="event_notify_here", description="イベントマッチ自動通知の送信先をこのチャンネルに設定します")
 async def event_notify_here_slash(interaction: discord.Interaction):
-    state = _load_state()
     if interaction.channel_id is None:
         await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
         return
-    state["event_notify_channel_id"] = int(interaction.channel_id)
-    _save_state(state)
+    _update_state({"event_notify_channel_id": int(interaction.channel_id)})
     await interaction.response.send_message("このチャンネルをイベントマッチ自動通知の送信先に設定しました。", ephemeral=True)
 
 @bot.tree.command(name="salmon_notify_here", description="サーモンラン自動通知の送信先をこのチャンネルに設定します")
 async def salmon_notify_here_slash(interaction: discord.Interaction):
-    state = _load_state()
     if interaction.channel_id is None:
         await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
         return
-    state["salmon_notify_channel_id"] = int(interaction.channel_id)
-    _save_state(state)
+    _update_state({"salmon_notify_channel_id": int(interaction.channel_id)})
     await interaction.response.send_message("このチャンネルをサーモンラン自動通知の送信先に設定しました。", ephemeral=True)
 
 @bot.tree.command(name="team_contest_notify_here", description="バイトチームコンテスト自動通知の送信先をこのチャンネルに設定します")
 async def team_contest_notify_here_slash(interaction: discord.Interaction):
-    state = _load_state()
     if interaction.channel_id is None:
         await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
         return
-    state["team_contest_notify_channel_id"] = int(interaction.channel_id)
-    _save_state(state)
+    _update_state({"team_contest_notify_channel_id": int(interaction.channel_id)})
     await interaction.response.send_message("このチャンネルをバイトチームコンテスト自動通知の送信先に設定しました。", ephemeral=True)
 
 @bot.tree.command(name="fest_notify_here", description="フェス自動通知の送信先をこのチャンネルに設定します")
 async def fest_notify_here_slash(interaction: discord.Interaction):
-    state = _load_state()
     if interaction.channel_id is None:
         await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
         return
-    state["fest_notify_channel_id"] = int(interaction.channel_id)
-    _save_state(state)
+    _update_state({"fest_notify_channel_id": int(interaction.channel_id)})
     await interaction.response.send_message("このチャンネルをフェス自動通知の送信先に設定しました。", ephemeral=True)
 
 @bot.tree.command(name="gear_notify_here", description="ギア更新自動通知の送信先をこのチャンネルに設定します")
 async def gear_notify_here_slash(interaction: discord.Interaction):
-    state = _load_state()
     if interaction.channel_id is None:
         await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
         return
-    state["gear_notify_channel_id"] = int(interaction.channel_id)
-    _save_state(state)
+    _update_state({"gear_notify_channel_id": int(interaction.channel_id)})
     await interaction.response.send_message("このチャンネルをギア更新自動通知の送信先に設定しました。", ephemeral=True)
 
 @bot.tree.command(name="monthly_gear_notify_here", description="サーモンラン月替わりギア自動通知の送信先をこのチャンネルに設定します")
 async def monthly_gear_notify_here_slash(interaction: discord.Interaction):
-    state = _load_state()
     if interaction.channel_id is None:
         await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
         return
-    state["coop_monthly_notify_channel_id"] = int(interaction.channel_id)
-    _save_state(state)
+    _update_state({"coop_monthly_notify_channel_id": int(interaction.channel_id)})
     await interaction.response.send_message("このチャンネルをサーモンラン月替わりギア自動通知の送信先に設定しました。", ephemeral=True)
 
 @bot.tree.command(name="xrank_notify_here", description="Xランキング自動通知の送信先をこのチャンネルに設定します")
 async def xrank_notify_here_slash(interaction: discord.Interaction):
-    state = _load_state()
     if interaction.channel_id is None:
         await interaction.response.send_message("この場所では設定できません。", ephemeral=True)
         return
-    state["xrank_notify_channel_id"] = int(interaction.channel_id)
-    _save_state(state)
+    _update_state({"xrank_notify_channel_id": int(interaction.channel_id)})
     await interaction.response.send_message("このチャンネルをXランキング自動通知の送信先に設定しました。", ephemeral=True)
 
 
@@ -1516,8 +1548,7 @@ async def _stage_auto_notify_loop():
 
     last_key = state.get("stage_last_rotation_key")
     if last_key is None:
-        state["stage_last_rotation_key"] = rotation_key
-        _save_state(state)
+        _update_state({"stage_last_rotation_key": rotation_key})
         if not STAGE_NOTIFY_ON_START:
             return
 
@@ -1541,9 +1572,12 @@ async def _stage_auto_notify_loop():
 
     sent = await channel.send(embeds=embeds, files=files)
 
-    state["stage_last_rotation_key"] = rotation_key
-    state["stage_last_message_id"] = int(sent.id)
-    _save_state(state)
+    _update_state(
+        {
+            "stage_last_rotation_key": rotation_key,
+            "stage_last_message_id": int(sent.id),
+        }
+    )
 
 @tasks.loop(minutes=1)
 async def _event_auto_notify_loop():
@@ -1568,8 +1602,7 @@ async def _event_auto_notify_loop():
 
     last_key = state.get("event_last_rotation_key")
     if last_key is None:
-        state["event_last_rotation_key"] = rotation_key
-        _save_state(state)
+        _update_state({"event_last_rotation_key": rotation_key})
         if not EVENT_NOTIFY_ON_START:
             return
 
@@ -1585,51 +1618,53 @@ async def _event_auto_notify_loop():
         return
     await channel.send(embed=embed, files=files)
 
-    state["event_last_rotation_key"] = rotation_key
-    _save_state(state)
+    _update_state({"event_last_rotation_key": rotation_key})
 
 @tasks.loop(minutes=1)
 async def _salmon_auto_notify_loop():
+    if not _acquire_lock("salmon_auto_notify"):
+        return
     state = _load_state()
-    channel_id = _resolve_notify_channel_id(state, "salmon_notify_channel_id", SALMON_NOTIFY_CHANNEL_ID)
-    if not channel_id:
-        return
-    if _is_fest_active():
-        return
-
-    data = get_salmon_schedule()
-    if not data:
-        return
-
-    current = _get_current_salmon_item(data)
-    if not current:
-        return
-
-    rotation_key = current.get("start_time")
-    if not rotation_key:
-        return
-
-    last_key = state.get("salmon_last_rotation_key")
-    if last_key is None:
-        state["salmon_last_rotation_key"] = rotation_key
-        _save_state(state)
-        if not SALMON_NOTIFY_ON_START:
+    try:
+        channel_id = _resolve_notify_channel_id(state, "salmon_notify_channel_id", SALMON_NOTIFY_CHANNEL_ID)
+        if not channel_id:
+            return
+        if _is_fest_active():
             return
 
-    if last_key == rotation_key:
-        return
+        data = get_salmon_schedule()
+        if not data:
+            return
 
-    channel = await _get_text_channel(channel_id)
-    if channel is None:
-        return
+        current = _get_current_salmon_item(data)
+        if not current:
+            return
 
-    embed, files, error = _get_salmon_payload()
-    if error:
-        return
-    await channel.send(embed=embed, files=files)
+        rotation_key = current.get("start_time")
+        if not rotation_key:
+            return
 
-    state["salmon_last_rotation_key"] = rotation_key
-    _save_state(state)
+        last_key = state.get("salmon_last_rotation_key")
+        if last_key is None:
+            _update_state({"salmon_last_rotation_key": rotation_key})
+            if not SALMON_NOTIFY_ON_START:
+                return
+
+        if last_key == rotation_key:
+            return
+
+        channel = await _get_text_channel(channel_id)
+        if channel is None:
+            return
+
+        embed, files, error = _get_salmon_payload()
+        if error:
+            return
+        await channel.send(embed=embed, files=files)
+
+        _update_state({"salmon_last_rotation_key": rotation_key})
+    finally:
+        _release_lock("salmon_auto_notify")
 
 @tasks.loop(minutes=1)
 async def _team_contest_auto_notify_loop():
@@ -1654,8 +1689,7 @@ async def _team_contest_auto_notify_loop():
 
     last_key = state.get("team_contest_last_rotation_key")
     if last_key is None:
-        state["team_contest_last_rotation_key"] = rotation_key
-        _save_state(state)
+        _update_state({"team_contest_last_rotation_key": rotation_key})
         if not TEAM_CONTEST_NOTIFY_ON_START:
             return
 
@@ -1671,8 +1705,7 @@ async def _team_contest_auto_notify_loop():
         return
     await channel.send(embed=embed, files=files)
 
-    state["team_contest_last_rotation_key"] = rotation_key
-    _save_state(state)
+    _update_state({"team_contest_last_rotation_key": rotation_key})
 
 @tasks.loop(minutes=1)
 async def _fest_auto_notify_loop():
@@ -1695,8 +1728,7 @@ async def _fest_auto_notify_loop():
 
     last_key = state.get("fest_last_rotation_key")
     if last_key is None:
-        state["fest_last_rotation_key"] = rotation_key
-        _save_state(state)
+        _update_state({"fest_last_rotation_key": rotation_key})
         if not FEST_NOTIFY_ON_START:
             return
 
@@ -1712,75 +1744,75 @@ async def _fest_auto_notify_loop():
         return
     await channel.send(embed=embed, files=files)
 
-    state["fest_last_rotation_key"] = rotation_key
-    _save_state(state)
+    _update_state({"fest_last_rotation_key": rotation_key})
 
 
 @tasks.loop(minutes=10)
 async def _gear_auto_notify_loop():
+    if not _acquire_lock("gear_auto_notify"):
+        return
     state = _load_state()
-    channel_id = _resolve_notify_channel_id(state, "gear_notify_channel_id", GEAR_NOTIFY_CHANNEL_ID)
-    if not channel_id:
-        return
-    if _is_fest_active():
-        return
-
-    gear_data = get_gear_data()
-    if not gear_data:
-        return
-
     try:
-        gesotown = gear_data.get("data", {}).get("gesotown", {})
-    except Exception:
-        return
+        channel_id = _resolve_notify_channel_id(state, "gear_notify_channel_id", GEAR_NOTIFY_CHANNEL_ID)
+        if not channel_id:
+            return
+        if _is_fest_active():
+            return
 
-    gear_hash = _gear_payload_hash(gesotown)
-    last_hash = state.get("gear_last_hash")
-    if last_hash is None:
-        state["gear_last_hash"] = gear_hash
-        _save_state(state)
-        if not GEAR_NOTIFY_ON_START:
-            gear_hash = None
+        gear_data = get_gear_data()
+        if not gear_data:
+            return
 
-    channel = await _get_text_channel(channel_id)
-    if channel is None:
-        return
+        try:
+            gesotown = gear_data.get("data", {}).get("gesotown", {})
+        except Exception:
+            return
 
-    if gear_hash and last_hash != gear_hash:
-        embeds, files, error = _build_gear_payloads(gear_data)
-        if not error:
-            await channel.send(embeds=embeds, files=files)
-        state["gear_last_hash"] = gear_hash
-        _save_state(state)
+        gear_hash = _gear_payload_hash(gesotown)
+        last_hash = state.get("gear_last_hash")
+        if last_hash is None:
+            _update_state({"gear_last_hash": gear_hash})
+            if not GEAR_NOTIFY_ON_START:
+                gear_hash = None
 
-    coop_data = get_coop_data()
-    if not coop_data:
-        return
-    monthly = coop_data.get("data", {}).get("coopResult", {}).get("monthlyGear") or {}
-    monthly_id = monthly.get("__splatoon3ink_id") or monthly.get("name")
-    if not monthly_id:
-        return
+        channel = await _get_text_channel(channel_id)
+        if channel is None:
+            return
 
-    last_monthly = state.get("coop_monthly_gear_id")
-    if last_monthly is None:
-        state["coop_monthly_gear_id"] = monthly_id
-        _save_state(state)
-        return
+        if gear_hash and last_hash != gear_hash:
+            embeds, files, error = _build_gear_payloads(gear_data)
+            if not error:
+                await channel.send(embeds=embeds, files=files)
+            _update_state({"gear_last_hash": gear_hash})
 
-    if last_monthly != monthly_id:
-        monthly_channel_id = _resolve_notify_channel_id(
-            state,
-            "coop_monthly_notify_channel_id",
-            COOP_MONTHLY_NOTIFY_CHANNEL_ID,
-        )
-        if monthly_channel_id:
-            monthly_channel = await _get_text_channel(monthly_channel_id)
-            if monthly_channel is not None:
-                embed, files, error = _build_coop_monthly_payload(coop_data)
-                if not error:
-                    await monthly_channel.send(embed=embed, files=files)
-        state["coop_monthly_gear_id"] = monthly_id
-        _save_state(state)
+        coop_data = get_coop_data()
+        if not coop_data:
+            return
+        monthly = coop_data.get("data", {}).get("coopResult", {}).get("monthlyGear") or {}
+        monthly_id = monthly.get("__splatoon3ink_id") or monthly.get("name")
+        if not monthly_id:
+            return
+
+        last_monthly = state.get("coop_monthly_gear_id")
+        if last_monthly is None:
+            _update_state({"coop_monthly_gear_id": monthly_id})
+            return
+
+        if last_monthly != monthly_id:
+            monthly_channel_id = _resolve_notify_channel_id(
+                state,
+                "coop_monthly_notify_channel_id",
+                COOP_MONTHLY_NOTIFY_CHANNEL_ID,
+            )
+            if monthly_channel_id:
+                monthly_channel = await _get_text_channel(monthly_channel_id)
+                if monthly_channel is not None:
+                    embed, files, error = _build_coop_monthly_payload(coop_data)
+                    if not error:
+                        await monthly_channel.send(embed=embed, files=files)
+            _update_state({"coop_monthly_gear_id": monthly_id})
+    finally:
+        _release_lock("gear_auto_notify")
 
 @tasks.loop(minutes=1)
 async def _xrank_daily_notify_loop():
@@ -1825,8 +1857,7 @@ async def _xrank_daily_notify_loop():
     file_obj = discord.File(fp=io.BytesIO(text.encode("utf-8")), filename="xrank_top100.txt")
     await channel.send(embed=embed, file=file_obj)
 
-    state["xrank_last_sent_date"] = today_key
-    _save_state(state)
+    _update_state({"xrank_last_sent_date": today_key})
 
 @bot.event
 async def on_ready():

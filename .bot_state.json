@@ -1,16 +1,16 @@
 {
   "stage_notify_channel_id": 1451194991283015793,
-  "stage_last_rotation_key": "2025-12-19T17:00:00+09:00",
+  "stage_last_rotation_key": "2025-12-20T19:00:00+09:00",
   "event_notify_channel_id": 1451474525672968242,
-  "salmon_last_rotation_key": "2025-12-18T09:00:00+09:00",
-  "gear_last_hash": "1c94a61f97705391460f546c9d71d180",
-  "coop_monthly_gear_id": "724616560d3ed93c",
+  "salmon_last_rotation_key": "2025-12-20T01:00:00+09:00",
+  "gear_last_hash": "405c7fe8460d67ea9270c9f77b53753f",
+  "coop_monthly_gear_id": "a3c0aaa52ff9edf5",
   "fest_notify_channel_id": 1451474427232387124,
   "gear_notify_channel_id": 1451469068480675940,
   "xrank_notify_channel_id": 1451469199086977149,
   "coop_monthly_notify_channel_id": 1451471499839017041,
   "fest_result_last_id": "RmVzdC1KUDpKVUVBLTAwMTAw",
-  "stage_last_message_id": 1451484278910095380,
+  "stage_last_message_id": 1451877032140079276,
   "team_contest_notify_channel_id": 1451486907430080563,
   "salmon_notify_channel_id": 1451486907430080563
 }
