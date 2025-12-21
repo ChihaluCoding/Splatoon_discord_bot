@@ -33,6 +33,7 @@ bot = commands.Bot(command_prefix='/', intents=intents)
 IMG_DIR = os.path.join(os.path.dirname(__file__), "img")
 WEAPON_IMG_DIR = os.path.join(os.path.dirname(__file__), "img", "武器")
 STATE_PATH = os.path.join(os.path.dirname(__file__), ".bot_state.json")
+GEAR_NOTIFY_STATE_PATH = os.path.join(os.path.dirname(__file__), ".gear_notify_state.json")
 LOCK_DIR = os.path.join(os.path.dirname(__file__), ".locks")
 STAGE_NOTIFY_CHANNEL_ID = int(os.getenv("STAGE_NOTIFY_CHANNEL_ID", "0") or "0")
 STAGE_NOTIFY_ON_START = (os.getenv("STAGE_NOTIFY_ON_START", "0") == "1")
@@ -78,6 +79,31 @@ def _update_state(updates: dict) -> None:
         state = _load_state()
         state.update(updates)
         _save_state(state)
+
+def _load_gear_notify_state() -> dict:
+    try:
+        with open(GEAR_NOTIFY_STATE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+def _save_gear_notify_state(state: dict) -> None:
+    try:
+        with open(GEAR_NOTIFY_STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving gear notify state: {e}")
+
+def _update_gear_notify_state(updates: dict) -> None:
+    if not updates:
+        return
+    with _STATE_LOCK:
+        state = _load_gear_notify_state()
+        state.update(updates)
+        _save_gear_notify_state(state)
 
 def _acquire_lock(name: str, ttl_seconds: int = 120) -> bool:
     try:
@@ -917,7 +943,10 @@ def _get_salmon_payload() -> tuple[discord.Embed | None, list[discord.File] | No
     if not results:
         return None, None, "サーモンランの情報がありません。"
 
-    current = results[0]
+    return _build_salmon_payload_from_item(results[0])
+
+def _build_salmon_payload_from_item(item: dict) -> tuple[discord.Embed | None, list[discord.File] | None, str | None]:
+    current = item
     stage = current.get("stage") or {}
     boss = current.get("boss") or {}
     weapons = current.get("weapons") or []
@@ -981,6 +1010,27 @@ def _get_salmon_payload() -> tuple[discord.Embed | None, list[discord.File] | No
             files_by_name[filename] = discord.File(salmon_icon_path, filename=filename)
 
     return embed, list(files_by_name.values()), None
+
+async def _send_ephemeral_payloads(
+    interaction: discord.Interaction,
+    payloads: list[tuple[list[discord.Embed] | None, list[discord.File] | None]],
+) -> None:
+    first = True
+    use_followup_only = interaction.response.is_done()
+    for embeds, files in payloads:
+        if not embeds:
+            continue
+        if first and not use_followup_only:
+            await interaction.response.send_message(embeds=embeds, files=files, ephemeral=True)
+            first = False
+        else:
+            await interaction.followup.send(embeds=embeds, files=files, ephemeral=True)
+
+async def _send_ephemeral_text(interaction: discord.Interaction, text: str) -> None:
+    if interaction.response.is_done():
+        await interaction.followup.send(text, ephemeral=True)
+    else:
+        await interaction.response.send_message(text, ephemeral=True)
 
 def _get_current_event_item(data: dict) -> dict | None:
     results = data.get("results") or []
@@ -1343,6 +1393,33 @@ async def next_slash(interaction: discord.Interaction):
         return
     await interaction.response.send_message(embeds=embeds, files=files)
 
+@bot.tree.command(name="all-next", description="取得できる全ての時間帯のステージを表示します")
+async def all_next_slash(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    data = get_stages()
+    if not data:
+        await _send_ephemeral_text(interaction, "データの取得に失敗しました。")
+        return
+    res = data.get("result", {})
+    mode_keys = ("regular", "bankara_challenge", "bankara_open", "x")
+    max_len = 0
+    for key in mode_keys:
+        try:
+            max_len = max(max_len, len(res.get(key, [])))
+        except Exception:
+            continue
+    if max_len == 0:
+        await _send_ephemeral_text(interaction, "ステージ情報がありません。")
+        return
+    payloads: list[tuple[list[discord.Embed] | None, list[discord.File] | None]] = []
+    for idx in range(max_len):
+        embeds, files = _build_mode_embeds(res, schedule_index=idx, title_prefix="ステージ情報")
+        payloads.append((embeds, files))
+    if not payloads:
+        await _send_ephemeral_text(interaction, "ステージ情報がありません。")
+        return
+    await _send_ephemeral_payloads(interaction, payloads)
+
 @bot.tree.command(name="salmon", description="現在のサーモンランを表示します")
 async def salmon_slash(interaction: discord.Interaction):
     embed, files, error = _get_salmon_payload()
@@ -1350,6 +1427,28 @@ async def salmon_slash(interaction: discord.Interaction):
         await interaction.response.send_message(error, ephemeral=True)
         return
     await interaction.response.send_message(embed=embed, files=files)
+
+@bot.tree.command(name="all-salmon", description="取得できる全ての時間帯のサーモンランを表示します")
+async def all_salmon_slash(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    data = get_salmon_schedule()
+    if not data:
+        await _send_ephemeral_text(interaction, "データの取得に失敗しました。")
+        return
+    results = data.get("results") or []
+    if not results:
+        await _send_ephemeral_text(interaction, "サーモンランの情報がありません。")
+        return
+    payloads: list[tuple[list[discord.Embed] | None, list[discord.File] | None]] = []
+    for item in results:
+        embed, files, error = _build_salmon_payload_from_item(item)
+        if error or not embed:
+            continue
+        payloads.append(([embed], files))
+    if not payloads:
+        await _send_ephemeral_text(interaction, "サーモンランの情報がありません。")
+        return
+    await _send_ephemeral_payloads(interaction, payloads)
 
 @bot.tree.command(name="team_contest", description="バイトチームコンテストを表示します")
 async def team_contest_slash(interaction: discord.Interaction):
@@ -1366,6 +1465,28 @@ async def event_slash(interaction: discord.Interaction):
         await interaction.response.send_message(error, ephemeral=True)
         return
     await interaction.response.send_message(embed=embed, files=files)
+
+@bot.tree.command(name="all-event", description="取得できる全ての時間帯のイベントマッチを表示します")
+async def all_event_slash(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    data = get_event_schedule()
+    if not data:
+        await _send_ephemeral_text(interaction, "データの取得に失敗しました。")
+        return
+    results = data.get("results") or []
+    if not results:
+        await _send_ephemeral_text(interaction, "イベントマッチの情報がありません。")
+        return
+    payloads: list[tuple[list[discord.Embed] | None, list[discord.File] | None]] = []
+    for item in results:
+        embed, files, error = _build_event_payload_from_item(item, "イベントマッチ情報", None)
+        if error or not embed:
+            continue
+        payloads.append(([embed], files))
+    if not payloads:
+        await _send_ephemeral_text(interaction, "イベントマッチの情報がありません。")
+        return
+    await _send_ephemeral_payloads(interaction, payloads)
 
 @bot.tree.command(name="gear", description="ゲソタウンのギア更新情報を表示します")
 async def gear_slash(interaction: discord.Interaction):
@@ -1407,6 +1528,29 @@ async def fest_slash(interaction: discord.Interaction):
         return
     await interaction.response.send_message(embed=embed, files=files)
 
+@bot.tree.command(name="all-fest", description="取得できる全てのフェス情報を表示します")
+async def all_fest_slash(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    data = get_festivals_data()
+    if not data:
+        await _send_ephemeral_text(interaction, "データの取得に失敗しました。")
+        return
+    region = data.get("JP") or {}
+    records = region.get("data", {}).get("festRecords", {}).get("nodes", [])
+    if not records:
+        await _send_ephemeral_text(interaction, "フェス情報がありません。")
+        return
+    payloads: list[tuple[list[discord.Embed] | None, list[discord.File] | None]] = []
+    for record in records:
+        embed, files, error = _build_fest_payload_from_record(record)
+        if error or not embed:
+            continue
+        payloads.append(([embed], files))
+    if not payloads:
+        await _send_ephemeral_text(interaction, "フェス情報がありません。")
+        return
+    await _send_ephemeral_payloads(interaction, payloads)
+
 
 @bot.tree.command(name="xrank", description="Xランキング（タカオカ）のトップ100を表示します")
 async def xrank_slash(interaction: discord.Interaction):
@@ -1430,10 +1574,14 @@ async def help_slash(interaction: discord.Interaction):
         name="表示",
         value=(
             "/next\n"
+            "/all-next\n"
             "/salmon\n"
+            "/all-salmon\n"
             "/team_contest\n"
             "/event\n"
+            "/all-event\n"
             "/fest\n"
+            "/all-fest\n"
             "/gear\n"
             "/monthly_gear\n"
             "/xrank"
@@ -1769,9 +1917,10 @@ async def _gear_auto_notify_loop():
             return
 
         gear_hash = _gear_payload_hash(gesotown)
-        last_hash = state.get("gear_last_hash")
+        gear_state = _load_gear_notify_state()
+        last_hash = gear_state.get("gesotown_last_hash")
         if last_hash is None:
-            _update_state({"gear_last_hash": gear_hash})
+            _update_gear_notify_state({"gesotown_last_hash": gear_hash})
             if not GEAR_NOTIFY_ON_START:
                 gear_hash = None
 
@@ -1783,7 +1932,7 @@ async def _gear_auto_notify_loop():
             embeds, files, error = _build_gear_payloads(gear_data)
             if not error:
                 await channel.send(embeds=embeds, files=files)
-            _update_state({"gear_last_hash": gear_hash})
+            _update_gear_notify_state({"gesotown_last_hash": gear_hash})
 
         coop_data = get_coop_data()
         if not coop_data:
