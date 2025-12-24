@@ -5,6 +5,7 @@ import os
 import hashlib
 import io
 import json
+import random
 import requests
 from datetime import datetime
 import time
@@ -32,6 +33,9 @@ bot = commands.Bot(command_prefix='/', intents=intents)
 
 IMG_DIR = os.path.join(os.path.dirname(__file__), "img")
 WEAPON_IMG_DIR = os.path.join(os.path.dirname(__file__), "img", "武器")
+FONT_PATH = os.path.join(os.path.dirname(__file__), "BlitzBold.otf")
+KANJI_FONT_PATH = os.path.join(os.path.dirname(__file__), "FOT-KurokaneStd-EB.otf")
+NAMEPLATE_DIR = os.path.join(os.path.dirname(__file__), "img", "ネームプレート")
 STATE_PATH = os.path.join(os.path.dirname(__file__), ".bot_state.json")
 GEAR_NOTIFY_STATE_PATH = os.path.join(os.path.dirname(__file__), ".gear_notify_state.json")
 LOCK_DIR = os.path.join(os.path.dirname(__file__), ".locks")
@@ -52,6 +56,24 @@ COOP_MONTHLY_NOTIFY_CHANNEL_ID = int(os.getenv("COOP_MONTHLY_NOTIFY_CHANNEL_ID",
 BOT_ACTIVITY_NAME = os.getenv("BOT_ACTIVITY_NAME", "Splatoon")
 
 _LOCALE_CACHE: dict | None = None
+_NAMEPLATE_CACHE: list[str] | None = None
+
+
+def _nameplate_paths() -> list[str]:
+    global _NAMEPLATE_CACHE
+    if _NAMEPLATE_CACHE is not None:
+        return _NAMEPLATE_CACHE
+    try:
+        files = os.listdir(NAMEPLATE_DIR)
+    except Exception:
+        _NAMEPLATE_CACHE = []
+        return _NAMEPLATE_CACHE
+    paths = []
+    for name in files:
+        if name.lower().endswith((".png", ".webp", ".jpg", ".jpeg")):
+            paths.append(os.path.join(NAMEPLATE_DIR, name))
+    _NAMEPLATE_CACHE = paths
+    return _NAMEPLATE_CACHE
 
 def _load_state() -> dict:
     try:
@@ -417,6 +439,7 @@ def _render_stage_card_bytes(
 
     def load_font(size: int):
         for candidate in (
+            FONT_PATH,
             r"C:\Windows\Fonts\meiryo.ttc",
             r"C:\Windows\Fonts\YuGothR.ttc",
             r"C:\Windows\Fonts\msgothic.ttc",
@@ -427,6 +450,200 @@ def _render_stage_card_bytes(
                 except Exception:
                     pass
         return ImageFont.load_default()
+
+    def load_kanji_font(size: int):
+        if os.path.exists(KANJI_FONT_PATH):
+            try:
+                return ImageFont.truetype(KANJI_FONT_PATH, size=size)
+            except Exception:
+                pass
+        return load_font(size)
+
+    def load_kanji_font(size: int):
+        if os.path.exists(KANJI_FONT_PATH):
+            try:
+                return ImageFont.truetype(KANJI_FONT_PATH, size=size)
+            except Exception:
+                pass
+        return load_font(size)
+
+    def load_kanji_font(size: int):
+        if os.path.exists(KANJI_FONT_PATH):
+            try:
+                return ImageFont.truetype(KANJI_FONT_PATH, size=size)
+            except Exception:
+                pass
+        return load_font(size)
+
+    def load_kanji_font(size: int):
+        if os.path.exists(KANJI_FONT_PATH):
+            try:
+                return ImageFont.truetype(KANJI_FONT_PATH, size=size)
+            except Exception:
+                pass
+        return load_font(size)
+
+    def is_kanji(ch: str) -> bool:
+        code = ord(ch)
+        return (
+            0x4E00 <= code <= 0x9FFF
+            or 0x3400 <= code <= 0x4DBF
+            or 0xF900 <= code <= 0xFAFF
+            or 0x20000 <= code <= 0x2A6DF
+            or 0x2A700 <= code <= 0x2B73F
+            or 0x2B740 <= code <= 0x2B81F
+            or 0x2B820 <= code <= 0x2CEAF
+        )
+
+    def _font_metrics(font) -> tuple[int, int]:
+        try:
+            return font.getmetrics()
+        except Exception:
+            return (0, 0)
+
+    def measure_text(text: str, base_font, kanji_font) -> tuple[int, int]:
+        total_w = 0
+        max_ascent = 0
+        max_descent = 0
+        tmp_draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        for ch in text:
+            font = kanji_font if is_kanji(ch) else base_font
+            bbox = tmp_draw.textbbox((0, 0), ch, font=font)
+            total_w += bbox[2] - bbox[0]
+            ascent, descent = _font_metrics(font)
+            if ascent > max_ascent:
+                max_ascent = ascent
+            if descent > max_descent:
+                max_descent = descent
+        return total_w, max_ascent + max_descent
+
+    def draw_text_with_kanji_font(draw, pos: tuple[int, int], text: str, base_font, kanji_font, **kwargs):
+        x, y = pos
+        base_ascent, _ = _font_metrics(base_font)
+        kanji_ascent, _ = _font_metrics(kanji_font)
+        max_ascent = max(base_ascent, kanji_ascent)
+        for ch in text:
+            font = kanji_font if is_kanji(ch) else base_font
+            ascent, _ = _font_metrics(font)
+            draw.text((x, y + (max_ascent - ascent)), ch, font=font, **kwargs)
+            bbox = draw.textbbox((0, 0), ch, font=font)
+            x += bbox[2] - bbox[0]
+
+    def load_kanji_font(size: int):
+        if os.path.exists(KANJI_FONT_PATH):
+            try:
+                return ImageFont.truetype(KANJI_FONT_PATH, size=size)
+            except Exception:
+                pass
+        return load_font(size)
+
+    def is_kanji(ch: str) -> bool:
+        code = ord(ch)
+        return (
+            0x4E00 <= code <= 0x9FFF
+            or 0x3400 <= code <= 0x4DBF
+            or 0xF900 <= code <= 0xFAFF
+            or 0x20000 <= code <= 0x2A6DF
+            or 0x2A700 <= code <= 0x2B73F
+            or 0x2B740 <= code <= 0x2B81F
+            or 0x2B820 <= code <= 0x2CEAF
+        )
+
+    def _font_metrics(font) -> tuple[int, int]:
+        try:
+            return font.getmetrics()
+        except Exception:
+            return (0, 0)
+
+    def measure_text(text: str, base_font, kanji_font) -> tuple[int, int]:
+        total_w = 0
+        max_ascent = 0
+        max_descent = 0
+        tmp_draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        for ch in text:
+            font = kanji_font if is_kanji(ch) else base_font
+            bbox = tmp_draw.textbbox((0, 0), ch, font=font)
+            total_w += bbox[2] - bbox[0]
+            ascent, descent = _font_metrics(font)
+            if ascent > max_ascent:
+                max_ascent = ascent
+            if descent > max_descent:
+                max_descent = descent
+        return total_w, max_ascent + max_descent
+
+    def draw_text_with_kanji_font(draw, pos: tuple[int, int], text: str, base_font, kanji_font, **kwargs):
+        x, y = pos
+        base_ascent, _ = _font_metrics(base_font)
+        kanji_ascent, _ = _font_metrics(kanji_font)
+        max_ascent = max(base_ascent, kanji_ascent)
+        for ch in text:
+            font = kanji_font if is_kanji(ch) else base_font
+            ascent, _ = _font_metrics(font)
+            draw.text((x, y + (max_ascent - ascent)), ch, font=font, **kwargs)
+            bbox = draw.textbbox((0, 0), ch, font=font)
+            x += bbox[2] - bbox[0]
+
+    def load_kanji_font(size: int):
+        if os.path.exists(KANJI_FONT_PATH):
+            try:
+                return ImageFont.truetype(KANJI_FONT_PATH, size=size)
+            except Exception:
+                pass
+        return load_font(size)
+
+    def load_kanji_font(size: int):
+        if os.path.exists(KANJI_FONT_PATH):
+            try:
+                return ImageFont.truetype(KANJI_FONT_PATH, size=size)
+            except Exception:
+                pass
+        return load_font(size)
+
+    def is_kanji(ch: str) -> bool:
+        code = ord(ch)
+        return (
+            0x4E00 <= code <= 0x9FFF
+            or 0x3400 <= code <= 0x4DBF
+            or 0xF900 <= code <= 0xFAFF
+            or 0x20000 <= code <= 0x2A6DF
+            or 0x2A700 <= code <= 0x2B73F
+            or 0x2B740 <= code <= 0x2B81F
+            or 0x2B820 <= code <= 0x2CEAF
+        )
+
+    def _font_metrics(font) -> tuple[int, int]:
+        try:
+            return font.getmetrics()
+        except Exception:
+            return (0, 0)
+
+    def measure_text(text: str, base_font, kanji_font) -> tuple[int, int]:
+        total_w = 0
+        max_ascent = 0
+        max_descent = 0
+        tmp_draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        for ch in text:
+            font = kanji_font if is_kanji(ch) else base_font
+            bbox = tmp_draw.textbbox((0, 0), ch, font=font)
+            total_w += bbox[2] - bbox[0]
+            ascent, descent = _font_metrics(font)
+            if ascent > max_ascent:
+                max_ascent = ascent
+            if descent > max_descent:
+                max_descent = descent
+        return total_w, max_ascent + max_descent
+
+    def draw_text_with_kanji_font(draw, pos: tuple[int, int], text: str, base_font, kanji_font, **kwargs):
+        x, y = pos
+        base_ascent, _ = _font_metrics(base_font)
+        kanji_ascent, _ = _font_metrics(kanji_font)
+        max_ascent = max(base_ascent, kanji_ascent)
+        for ch in text:
+            font = kanji_font if is_kanji(ch) else base_font
+            ascent, _ = _font_metrics(font)
+            draw.text((x, y + (max_ascent - ascent)), ch, font=font, **kwargs)
+            bbox = draw.textbbox((0, 0), ch, font=font)
+            x += bbox[2] - bbox[0]
 
     # Discord のEmbed内では横幅に合わせて縮小されるため、縦横比を大きめにして見やすくする
     card_w = 1000
@@ -470,7 +687,15 @@ def _render_stage_card_bytes(
         draw.ellipse(badge_box, fill=(255, 196, 0, 255))
 
     title_font = load_font(30)
-    draw.text((icon_x + icon_size + 14, pad + 10), rule_name, fill=(255, 255, 255, 255), font=title_font)
+    title_kanji_font = load_kanji_font(30)
+    draw_text_with_kanji_font(
+        draw,
+        (icon_x + icon_size + 14, pad + 10),
+        rule_name,
+        title_font,
+        title_kanji_font,
+        fill=(255, 255, 255, 255),
+    )
 
     # stage panels
     panel_top = pad + header_h
@@ -500,11 +725,17 @@ def _render_stage_card_bytes(
         odraw = ImageDraw.Draw(overlay)
         odraw.rounded_rectangle((0, 0, w, label_h), radius=12, fill=(0, 0, 0, 120))
         font = load_font(26)
+        kanji_font = load_kanji_font(26)
         # center text
-        bbox = odraw.textbbox((0, 0), text, font=font)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        odraw.text(((w - tw) // 2, (label_h - th) // 2 - 1), text, fill=(255, 255, 255, 255), font=font)
+        tw, th = measure_text(text, font, kanji_font)
+        draw_text_with_kanji_font(
+            odraw,
+            ((w - tw) // 2, (label_h - th) // 2 - 1),
+            text,
+            font,
+            kanji_font,
+            fill=(255, 255, 255, 255),
+        )
         card.alpha_composite(overlay, (x, y + h - label_h - 8))
 
     # Left stage
@@ -609,6 +840,7 @@ def _render_gear_collage_bytes(items: list[dict], title: str) -> bytes | None:
 
     def load_font(size: int):
         for candidate in (
+            FONT_PATH,
             r"C:\Windows\Fonts\meiryo.ttc",
             r"C:\Windows\Fonts\YuGothR.ttc",
             r"C:\Windows\Fonts\msgothic.ttc",
@@ -619,6 +851,14 @@ def _render_gear_collage_bytes(items: list[dict], title: str) -> bytes | None:
                 except Exception:
                     pass
         return ImageFont.load_default()
+
+    def load_kanji_font(size: int):
+        if os.path.exists(KANJI_FONT_PATH):
+            try:
+                return ImageFont.truetype(KANJI_FONT_PATH, size=size)
+            except Exception:
+                pass
+        return load_font(size)
 
     cols = 3
     rows = (len(items) + cols - 1) // cols
@@ -634,9 +874,6 @@ def _render_gear_collage_bytes(items: list[dict], title: str) -> bytes | None:
     card = Image.new("RGBA", (card_w, card_h), bg)
     draw = ImageDraw.Draw(card)
 
-    title_font = load_font(28)
-    draw.text((pad, pad + 6), title, fill=(255, 255, 255, 255), font=title_font)
-
     def fetch_image(url: str) -> Image.Image | None:
         try:
             resp = requests.get(url, timeout=10)
@@ -645,6 +882,93 @@ def _render_gear_collage_bytes(items: list[dict], title: str) -> bytes | None:
             return Image.open(io.BytesIO(resp.content)).convert("RGBA")
         except Exception:
             return None
+
+    logo_cache: dict[str, Image.Image] = {}
+    nameplate_cache: dict[str, Image.Image] = {}
+    nameplate_paths = _nameplate_paths()
+
+    def fetch_logo(path: str) -> Image.Image | None:
+        if not path:
+            return None
+        cached = logo_cache.get(path)
+        if cached is not None:
+            return cached
+        try:
+            img = Image.open(path).convert("RGBA")
+        except Exception:
+            return None
+        logo_cache[path] = img
+        return img
+
+    def fetch_nameplate(path: str) -> Image.Image | None:
+        if not path:
+            return None
+        cached = nameplate_cache.get(path)
+        if cached is not None:
+            return cached
+        try:
+            img = Image.open(path).convert("RGBA")
+        except Exception:
+            return None
+        nameplate_cache[path] = img
+        return img
+
+    def is_kanji(ch: str) -> bool:
+        code = ord(ch)
+        return (
+            0x4E00 <= code <= 0x9FFF
+            or 0x3400 <= code <= 0x4DBF
+            or 0xF900 <= code <= 0xFAFF
+            or 0x20000 <= code <= 0x2A6DF
+            or 0x2A700 <= code <= 0x2B73F
+            or 0x2B740 <= code <= 0x2B81F
+            or 0x2B820 <= code <= 0x2CEAF
+        )
+
+    def _font_metrics(font) -> tuple[int, int]:
+        try:
+            return font.getmetrics()
+        except Exception:
+            return (0, 0)
+
+    def measure_text(text: str, base_font, kanji_font) -> tuple[int, int]:
+        total_w = 0
+        max_ascent = 0
+        max_descent = 0
+        tmp_draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        for ch in text:
+            font = kanji_font if is_kanji(ch) else base_font
+            bbox = tmp_draw.textbbox((0, 0), ch, font=font)
+            total_w += bbox[2] - bbox[0]
+            ascent, descent = _font_metrics(font)
+            if ascent > max_ascent:
+                max_ascent = ascent
+            if descent > max_descent:
+                max_descent = descent
+        return total_w, max_ascent + max_descent
+
+    def draw_text_with_kanji_font(draw, pos: tuple[int, int], text: str, base_font, kanji_font, **kwargs):
+        x, y = pos
+        base_ascent, _ = _font_metrics(base_font)
+        kanji_ascent, _ = _font_metrics(kanji_font)
+        max_ascent = max(base_ascent, kanji_ascent)
+        for ch in text:
+            font = kanji_font if is_kanji(ch) else base_font
+            ascent, _ = _font_metrics(font)
+            draw.text((x, y + (max_ascent - ascent)), ch, font=font, **kwargs)
+            bbox = draw.textbbox((0, 0), ch, font=font)
+            x += bbox[2] - bbox[0]
+
+    title_font = load_font(28)
+    title_kanji_font = load_kanji_font(28)
+    draw_text_with_kanji_font(
+        draw,
+        (pad, pad + 6),
+        title,
+        title_font,
+        title_kanji_font,
+        fill=(255, 255, 255, 255),
+    )
 
     def paste_cover(target: Image.Image, img: Image.Image, x: int, y: int, w: int, h: int):
         iw, ih = img.size
@@ -656,7 +980,19 @@ def _render_gear_collage_bytes(items: list[dict], title: str) -> bytes | None:
         cropped = resized.crop((left, top, left + w, top + h))
         target.alpha_composite(cropped, (x, y))
 
-    label_font = load_font(20)
+    def paste_logo(target: Image.Image, logo: Image.Image, pad_px: int = 10):
+        tw, th = target.size
+        lw, lh = logo.size
+        max_size = int(min(tw, th) * 0.22)
+        if max_size <= 0:
+            return
+        scale = min(max_size / lw, max_size / lh)
+        nw, nh = max(1, int(lw * scale)), max(1, int(lh * scale))
+        resized = logo.resize((nw, nh), Image.Resampling.LANCZOS)
+        target.alpha_composite(resized, (tw - nw - pad_px, pad_px))
+
+    label_font_size = 20
+    label_font = load_font(label_font_size)
     label_h = 34
 
     for idx, item in enumerate(items):
@@ -665,20 +1001,86 @@ def _render_gear_collage_bytes(items: list[dict], title: str) -> bytes | None:
         x = pad + col * (cell_w + gap)
         y = pad + header_h + row * (cell_h + gap)
 
+        label_h_eff = label_h
+        plate_x = 0
+        plate_y = cell_h - label_h
+        plate_w = cell_w
+        plate_h = label_h
+        plate_img = None
+        if nameplate_paths:
+            plate_path = random.choice(nameplate_paths)
+            plate = fetch_nameplate(plate_path)
+            if plate:
+                plate_w, plate_h = plate.size
+                scale = min(cell_w / plate_w, cell_h / plate_h, 1.0)
+                if scale < 1.0:
+                    plate = plate.resize(
+                        (max(1, int(plate_w * scale)), max(1, int(plate_h * scale))),
+                        Image.Resampling.LANCZOS,
+                    )
+                    plate_w, plate_h = plate.size
+                plate_x = (cell_w - plate_w) // 2
+                plate_y = cell_h - plate_h
+                plate_img = plate
+        if plate_img is not None:
+            label_h_eff = plate_h
+        else:
+            label_h_eff = label_h
+            plate_w = cell_w
+            plate_h = label_h
+        image_h = max(1, cell_h - label_h_eff)
+        label_y = image_h
+
         panel = Image.new("RGBA", (cell_w, cell_h), (10, 12, 18, 255))
         img = fetch_image(item.get("image_url") or "")
         if img:
-            paste_cover(panel, img, 0, 0, cell_w, cell_h)
+            paste_cover(panel, img, 0, 0, cell_w, image_h)
+        logo_path = item.get("brand_logo_path") or ""
+        if logo_path:
+            logo = fetch_logo(logo_path)
+            if logo:
+                paste_logo(panel, logo)
 
-        # label overlay
-        overlay = Image.new("RGBA", (cell_w, label_h), (0, 0, 0, 160))
-        odraw = ImageDraw.Draw(overlay)
+        if plate_img is not None:
+            panel.paste(plate_img, (plate_x, label_y), plate_img)
+        else:
+            overlay = Image.new("RGBA", (cell_w, label_h), (0, 0, 0, 160))
+            panel.alpha_composite(overlay, (plate_x, label_y))
+        odraw = ImageDraw.Draw(panel)
         name = item.get("name") or "不明"
-        bbox = odraw.textbbox((0, 0), name, font=label_font)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        odraw.text(((cell_w - tw) // 2, (label_h - th) // 2 - 1), name, fill=(255, 255, 255, 255), font=label_font)
-        panel.alpha_composite(overlay, (0, cell_h - label_h))
+        max_w = max(10, plate_w - 12)
+        font = label_font
+        kanji_font = load_kanji_font(label_font_size)
+        for size in range(label_font_size, 11, -2):
+            font = load_font(size)
+            kanji_font = load_kanji_font(size)
+            tw, _ = measure_text(name, font, kanji_font)
+            if tw <= max_w:
+                break
+        else:
+            tw = max_w + 1
+        if tw > max_w:
+            truncated = name
+            while truncated:
+                truncated = truncated[:-1]
+                test = f"{truncated}..."
+                tw, _ = measure_text(test, font, kanji_font)
+                if tw <= max_w:
+                    name = test
+                    break
+        tw, th = measure_text(name, font, kanji_font)
+        text_x = plate_x + (plate_w - tw) // 2
+        text_y = label_y + (label_h_eff - th) // 2 - 1
+        draw_text_with_kanji_font(
+            odraw,
+            (text_x, text_y),
+            name,
+            font,
+            kanji_font,
+            fill=(20, 20, 20, 255),
+            stroke_width=2,
+            stroke_fill=(255, 255, 255, 220),
+        )
 
         card.alpha_composite(panel, (x, y))
 
@@ -698,6 +1100,7 @@ def _render_gear_collage_sections_bytes(sections: list[tuple[str, list[dict]]]) 
 
     def load_font(size: int):
         for candidate in (
+            FONT_PATH,
             r"C:\Windows\Fonts\meiryo.ttc",
             r"C:\Windows\Fonts\YuGothR.ttc",
             r"C:\Windows\Fonts\msgothic.ttc",
@@ -718,6 +1121,36 @@ def _render_gear_collage_sections_bytes(sections: list[tuple[str, list[dict]]]) 
         except Exception:
             return None
 
+    logo_cache: dict[str, Image.Image] = {}
+    nameplate_cache: dict[str, Image.Image] = {}
+    nameplate_paths = _nameplate_paths()
+
+    def fetch_logo(path: str) -> Image.Image | None:
+        if not path:
+            return None
+        cached = logo_cache.get(path)
+        if cached is not None:
+            return cached
+        try:
+            img = Image.open(path).convert("RGBA")
+        except Exception:
+            return None
+        logo_cache[path] = img
+        return img
+
+    def fetch_nameplate(path: str) -> Image.Image | None:
+        if not path:
+            return None
+        cached = nameplate_cache.get(path)
+        if cached is not None:
+            return cached
+        try:
+            img = Image.open(path).convert("RGBA")
+        except Exception:
+            return None
+        nameplate_cache[path] = img
+        return img
+
     def paste_cover(target: Image.Image, img: Image.Image, x: int, y: int, w: int, h: int):
         iw, ih = img.size
         scale = max(w / iw, h / ih)
@@ -727,6 +1160,17 @@ def _render_gear_collage_sections_bytes(sections: list[tuple[str, list[dict]]]) 
         top = (nh - h) // 2
         cropped = resized.crop((left, top, left + w, top + h))
         target.alpha_composite(cropped, (x, y))
+
+    def paste_logo(target: Image.Image, logo: Image.Image, pad_px: int = 10):
+        tw, th = target.size
+        lw, lh = logo.size
+        max_size = int(min(tw, th) * 0.22)
+        if max_size <= 0:
+            return
+        scale = min(max_size / lw, max_size / lh)
+        nw, nh = max(1, int(lw * scale)), max(1, int(lh * scale))
+        resized = logo.resize((nw, nh), Image.Resampling.LANCZOS)
+        target.alpha_composite(resized, (tw - nw - pad_px, pad_px))
 
     card_w = 1000
     card_h = 900
@@ -740,12 +1184,21 @@ def _render_gear_collage_sections_bytes(sections: list[tuple[str, list[dict]]]) 
     card = Image.new("RGBA", (card_w, card_h), bg)
     draw = ImageDraw.Draw(card)
     title_font = load_font(26)
-    label_font = load_font(20)
+    title_kanji_font = load_kanji_font(26)
+    label_font_size = 20
+    label_font = load_font(label_font_size)
     label_h = 34
 
     y_cursor = pad
     for title, items in sections:
-        draw.text((pad, y_cursor + 2), title, fill=(255, 255, 255, 255), font=title_font)
+        draw_text_with_kanji_font(
+            draw,
+            (pad, y_cursor + 2),
+            title,
+            title_font,
+            title_kanji_font,
+            fill=(255, 255, 255, 255),
+        )
         y_cursor += header_h
 
         rows = (len(items) + cols - 1) // cols
@@ -758,19 +1211,86 @@ def _render_gear_collage_sections_bytes(sections: list[tuple[str, list[dict]]]) 
             x = pad + col * (cell_w + gap)
             y = y_cursor + row * (cell_h + gap)
 
+            label_h_eff = label_h
+            plate_x = 0
+            plate_y = cell_h - label_h
+            plate_w = cell_w
+            plate_h = label_h
+            plate_img = None
+            if nameplate_paths:
+                plate_path = random.choice(nameplate_paths)
+                plate = fetch_nameplate(plate_path)
+                if plate:
+                    plate_w, plate_h = plate.size
+                    scale = min(cell_w / plate_w, cell_h / plate_h, 1.0)
+                    if scale < 1.0:
+                        plate = plate.resize(
+                            (max(1, int(plate_w * scale)), max(1, int(plate_h * scale))),
+                            Image.Resampling.LANCZOS,
+                        )
+                        plate_w, plate_h = plate.size
+                    plate_x = (cell_w - plate_w) // 2
+                    plate_y = cell_h - plate_h
+                    plate_img = plate
+            if plate_img is not None:
+                label_h_eff = plate_h
+            else:
+                label_h_eff = label_h
+                plate_w = cell_w
+                plate_h = label_h
+            image_h = max(1, cell_h - label_h_eff)
+            label_y = image_h
+
             panel = Image.new("RGBA", (cell_w, cell_h), (10, 12, 18, 255))
             img = fetch_image(item.get("image_url") or "")
             if img:
-                paste_cover(panel, img, 0, 0, cell_w, cell_h)
+                paste_cover(panel, img, 0, 0, cell_w, image_h)
+            logo_path = item.get("brand_logo_path") or ""
+            if logo_path:
+                logo = fetch_logo(logo_path)
+                if logo:
+                    paste_logo(panel, logo)
 
-            overlay = Image.new("RGBA", (cell_w, label_h), (0, 0, 0, 160))
-            odraw = ImageDraw.Draw(overlay)
+            if plate_img is not None:
+                panel.paste(plate_img, (plate_x, label_y), plate_img)
+            else:
+                overlay = Image.new("RGBA", (cell_w, label_h), (0, 0, 0, 160))
+                panel.alpha_composite(overlay, (plate_x, label_y))
+            odraw = ImageDraw.Draw(panel)
             name = item.get("name") or "不明"
-            bbox = odraw.textbbox((0, 0), name, font=label_font)
-            tw = bbox[2] - bbox[0]
-            th = bbox[3] - bbox[1]
-            odraw.text(((cell_w - tw) // 2, (label_h - th) // 2 - 1), name, fill=(255, 255, 255, 255), font=label_font)
-            panel.alpha_composite(overlay, (0, cell_h - label_h))
+            max_w = max(10, plate_w - 12)
+            font = label_font
+            kanji_font = load_kanji_font(label_font_size)
+            for size in range(label_font_size, 11, -2):
+                font = load_font(size)
+                kanji_font = load_kanji_font(size)
+                tw, _ = measure_text(name, font, kanji_font)
+                if tw <= max_w:
+                    break
+            else:
+                tw = max_w + 1
+            if tw > max_w:
+                truncated = name
+                while truncated:
+                    truncated = truncated[:-1]
+                    test = f"{truncated}..."
+                    tw, _ = measure_text(test, font, kanji_font)
+                    if tw <= max_w:
+                        name = test
+                        break
+            tw, th = measure_text(name, font, kanji_font)
+            text_x = plate_x + (plate_w - tw) // 2
+            text_y = label_y + (label_h_eff - th) // 2 - 1
+            draw_text_with_kanji_font(
+                odraw,
+                (text_x, text_y),
+                name,
+                font,
+                kanji_font,
+                fill=(20, 20, 20, 255),
+                stroke_width=2,
+                stroke_fill=(255, 255, 255, 220),
+            )
 
             card.alpha_composite(panel, (x, y))
 
@@ -919,6 +1439,27 @@ def _localized_power_name(power: dict) -> str:
     key = power.get("__splatoon3ink_id")
     name = _locale_name("powers", key)
     return name or power.get("name") or "不明"
+
+
+def _localized_brand_name(brand: dict) -> str:
+    key = brand.get("id") or brand.get("__splatoon3ink_id")
+    name = _locale_name("brands", key)
+    return name or brand.get("name") or "不明"
+
+
+def _find_brand_logo_path(brand: dict) -> str | None:
+    base_dir = os.path.join(os.path.dirname(__file__), "img", "ギアブランド")
+    name = _localized_brand_name(brand)
+    if name:
+        candidate = os.path.join(base_dir, f"{name}.png")
+        if os.path.exists(candidate):
+            return candidate
+    raw_name = brand.get("name")
+    if raw_name and raw_name != name:
+        candidate = os.path.join(base_dir, f"{raw_name}.png")
+        if os.path.exists(candidate):
+            return candidate
+    return None
 
 def _get_current_fest_record(data: dict) -> dict | None:
     if not data:
@@ -1133,24 +1674,124 @@ def _get_current_team_contest_item(data: dict) -> dict | None:
     results = data.get("results") or []
     return _find_current_item(results)
 
-def _gear_payload_hash(gesotown: dict) -> str:
-    pickup = gesotown.get("pickupBrand") or {}
-    limited = gesotown.get("limitedGears") or []
-    parts: list[str] = []
-    parts.append(str(pickup.get("saleEndTime") or ""))
-    brand = pickup.get("brand") or {}
-    parts.append(str(brand.get("name") or ""))
-    for gear in pickup.get("brandGears") or []:
-        g = gear.get("gear") or {}
-        parts.append(str(g.get("name") or ""))
-        parts.append(str(gear.get("price") or ""))
-    for gear in limited:
-        g = gear.get("gear") or {}
-        parts.append(str(gear.get("saleEndTime") or ""))
-        parts.append(str(g.get("name") or ""))
-        parts.append(str(gear.get("price") or ""))
+def _normalize_gear_items(entries: list[dict]) -> list[dict]:
+    items: list[dict] = []
+    for g in entries:
+        gear = g.get("gear") or {}
+        name = _localized_gear_name(gear)
+        price = g.get("price") or "?"
+        item_id = gear.get("__splatoon3ink_id") or gear.get("name") or name
+        image_url = (gear.get("image") or {}).get("url")
+        brand = gear.get("brand") or {}
+        items.append(
+            {
+                "id": item_id,
+                "name": name,
+                "price": price,
+                "image_url": image_url,
+                "brand_logo_path": _find_brand_logo_path(brand),
+            }
+        )
+    return items
+
+
+def _gear_item_key(item: dict) -> str:
+    return f"{item.get('id') or ''}:{item.get('price') or ''}"
+
+
+def _gear_items_signature(items: list[dict]) -> str:
+    parts = sorted(_gear_item_key(item) for item in items)
     raw = "|".join(parts)
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def _pickup_signature(pickup: dict, items: list[dict]) -> str:
+    brand = pickup.get("brand") or {}
+    brand_key = brand.get("__splatoon3ink_id") or brand.get("name") or ""
+    parts = sorted(_gear_item_key(item) for item in items)
+    raw = "|".join([str(brand_key)] + parts)
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def _serialize_gear_items(items: list[dict]) -> list[dict]:
+    return [{"id": item.get("id"), "name": item.get("name"), "price": item.get("price")} for item in items]
+
+
+def _build_gear_rotation_payload(
+    limited_items: list[dict],
+    added_keys: set[str],
+    removed_items: list[dict],
+) -> tuple[list[discord.Embed] | None, list[discord.File] | None, str | None]:
+    embed = discord.Embed(title="【販売ギア入れ替わり】", color=0x4CAF50)
+
+    if removed_items:
+        lines = [f"{item.get('name')} ({item.get('price')}G)" for item in removed_items]
+        embed.add_field(name="販売終了ギア", value="\n".join(lines), inline=False)
+
+    if added_keys:
+        lines = []
+        for item in limited_items:
+            if _gear_item_key(item) in added_keys:
+                lines.append(f"**[New]**{item.get('name')} ({item.get('price')}G)")
+        if lines:
+            embed.add_field(name="新販売ギア", value="\n".join(lines), inline=False)
+
+    if limited_items:
+        lines = []
+        for item in limited_items:
+            label = f"{item.get('name')} ({item.get('price')}G)"
+            if _gear_item_key(item) in added_keys:
+                label = f"**[New]**{label}"
+            lines.append(label)
+        embed.add_field(name="販売中ギア", value="\n".join(lines), inline=False)
+    else:
+        embed.add_field(name="販売中ギア", value="なし", inline=False)
+
+    files_by_name: dict[str, discord.File] = {}
+    collage = _render_gear_collage_bytes(limited_items, "販売中ギア")
+    if collage:
+        filename = f"gear_limited_{hashlib.md5(collage).hexdigest()}.png"
+        embed.set_image(url=f"attachment://{filename}")
+        files_by_name[filename] = discord.File(fp=io.BytesIO(collage), filename=filename)
+
+    return [embed], list(files_by_name.values()), None
+
+
+def _build_pickup_payload(
+    pickup: dict, pickup_items: list[dict]
+) -> tuple[list[discord.Embed] | None, list[discord.File] | None, str | None]:
+    embed = discord.Embed(title="【ピックアップ更新】", color=0x4CAF50)
+
+    sale_end = pickup.get("saleEndTime") or ""
+    try:
+        sale_end_fmt = _format_mmdd_hhmm(sale_end)
+    except Exception:
+        sale_end_fmt = "不明"
+
+    brand = pickup.get("brand") or {}
+    brand_name = _localized_brand_name(brand)
+    power = brand.get("usualGearPower") or {}
+    power_name = _localized_power_name(power)
+    embed.add_field(
+        name="注目ブランド",
+        value=f"{brand_name}\n得意ギアパワー: {power_name}\n期間: {sale_end_fmt}まで",
+        inline=False,
+    )
+
+    if pickup_items:
+        lines = [f"{item.get('name')} ({item.get('price')}G)" for item in pickup_items]
+        embed.add_field(name="ピックアップ", value="\n".join(lines), inline=False)
+    else:
+        embed.add_field(name="ピックアップ", value="なし", inline=False)
+
+    files_by_name: dict[str, discord.File] = {}
+    collage = _render_gear_collage_bytes(pickup_items, "ピックアップ")
+    if collage:
+        filename = f"gear_pickup_{hashlib.md5(collage).hexdigest()}.png"
+        embed.set_image(url=f"attachment://{filename}")
+        files_by_name[filename] = discord.File(fp=io.BytesIO(collage), filename=filename)
+
+    return [embed], list(files_by_name.values()), None
 
 def _build_gear_payloads(data: dict) -> tuple[list[discord.Embed] | None, list[discord.File] | None, str | None]:
     try:
@@ -1161,61 +1802,28 @@ def _build_gear_payloads(data: dict) -> tuple[list[discord.Embed] | None, list[d
     pickup = gesotown.get("pickupBrand") or {}
     limited = gesotown.get("limitedGears") or []
 
-    embed = discord.Embed(title="【ギア更新】", color=0x4CAF50)
+    pickup_items = _normalize_gear_items(pickup.get("brandGears") or [])
+    limited_items = _normalize_gear_items(limited)
 
-    sale_end = pickup.get("saleEndTime") or ""
-    try:
-        sale_end_fmt = _format_mmdd_hhmm(sale_end)
-    except Exception:
-        sale_end_fmt = "不明"
-
-    brand = pickup.get("brand") or {}
-    brand_name = brand.get("name") or "不明"
-    power = brand.get("usualGearPower") or {}
-    power_name = _localized_power_name(power)
-    embed.add_field(
-        name="注目ブランド",
-        value=f"{brand_name}\n得意ギアパワー: {power_name}\n終了: {sale_end_fmt}",
-        inline=False,
-    )
-
-    brand_gears = pickup.get("brandGears") or []
+    embeds: list[discord.Embed] = []
     files_by_name: dict[str, discord.File] = {}
-    embeds: list[discord.Embed] = [embed]
 
-    pickup_items: list[dict] = []
-    if brand_gears:
-        lines = []
-        for g in brand_gears:
-            gear = g.get("gear") or {}
-            name = _localized_gear_name(gear)
-            price = g.get("price") or "?"
-            lines.append(f"- {name} ({price}G)")
-            image_url = (gear.get("image") or {}).get("url")
-            if image_url:
-                pickup_items.append({"name": name, "image_url": image_url})
-        embed.add_field(name="ピックアップ", value="\n".join(lines), inline=False)
+    rotation_embeds, rotation_files, _ = _build_gear_rotation_payload(limited_items, set(), [])
+    if rotation_embeds:
+        embeds.extend(rotation_embeds)
+    if rotation_files:
+        for f in rotation_files:
+            files_by_name[f.filename] = f
 
-    limited_items: list[dict] = []
-    if limited:
-        lines = []
-        for g in limited:
-            gear = g.get("gear") or {}
-            name = _localized_gear_name(gear)
-            price = g.get("price") or "?"
-            lines.append(f"- {name} ({price}G)")
-            image_url = (gear.get("image") or {}).get("url")
-            if image_url:
-                limited_items.append({"name": name, "image_url": image_url})
-        embed.add_field(name="限定", value="\n".join(lines), inline=False)
+    pickup_embeds, pickup_files, _ = _build_pickup_payload(pickup, pickup_items)
+    if pickup_embeds:
+        embeds.extend(pickup_embeds)
+    if pickup_files:
+        for f in pickup_files:
+            files_by_name[f.filename] = f
 
-    collage = _render_gear_collage_sections_bytes(
-        [("ピックアップ", pickup_items), ("限定", limited_items)]
-    )
-    if collage:
-        filename = f"gear_all_{hashlib.md5(collage).hexdigest()}.png"
-        embed.set_image(url=f"attachment://{filename}")
-        files_by_name[filename] = discord.File(fp=io.BytesIO(collage), filename=filename)
+    if not embeds:
+        return None, None, "ゲソタウンの情報がありません。"
 
     return embeds, list(files_by_name.values()), None
 
@@ -1226,7 +1834,7 @@ def _build_coop_monthly_payload(data: dict) -> tuple[discord.Embed | None, list[
         return None, None, "データの取得に失敗しました。"
 
     name = _localized_gear_name(monthly)
-    embed = discord.Embed(title="【サーモンラン 月替わりギア】", color=0xFF8C00)
+    embed = discord.Embed(title="【サーモンラン報酬ギア更新】", color=0xFF8C00)
     embed.add_field(name="ギア", value=name, inline=True)
 
     image_url = (monthly.get("image") or {}).get("url")
@@ -1490,15 +2098,16 @@ async def all_event_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="gear", description="ゲソタウンのギア更新情報を表示します")
 async def gear_slash(interaction: discord.Interaction):
+    await interaction.response.defer()
     data = get_gear_data()
     if not data:
-        await interaction.response.send_message("データの取得に失敗しました。", ephemeral=True)
+        await interaction.followup.send("データの取得に失敗しました。", ephemeral=True)
         return
     embeds, files, error = _build_gear_payloads(data)
     if error:
-        await interaction.response.send_message(error, ephemeral=True)
+        await interaction.followup.send(error, ephemeral=True)
         return
-    await interaction.response.send_message(embeds=embeds, files=files)
+    await interaction.followup.send(embeds=embeds, files=files)
 
 @bot.tree.command(name="monthly_gear", description="サーモンランの月替わりギアを表示します")
 async def monthly_gear_slash(interaction: discord.Interaction):
@@ -1916,23 +2525,58 @@ async def _gear_auto_notify_loop():
         except Exception:
             return
 
-        gear_hash = _gear_payload_hash(gesotown)
+        pickup = gesotown.get("pickupBrand") or {}
+        limited = gesotown.get("limitedGears") or []
+        pickup_items = _normalize_gear_items(pickup.get("brandGears") or [])
+        limited_items = _normalize_gear_items(limited)
+
         gear_state = _load_gear_notify_state()
-        last_hash = gear_state.get("gesotown_last_hash")
-        if last_hash is None:
-            _update_gear_notify_state({"gesotown_last_hash": gear_hash})
+        last_limited_sig = gear_state.get("gesotown_limited_sig")
+        last_pickup_sig = gear_state.get("gesotown_pickup_sig")
+        current_limited_sig = _gear_items_signature(limited_items)
+        current_pickup_sig = _pickup_signature(pickup, pickup_items)
+        first_seen = last_limited_sig is None and last_pickup_sig is None
+
+        if first_seen:
+            _update_gear_notify_state(
+                {
+                    "gesotown_limited_sig": current_limited_sig,
+                    "gesotown_pickup_sig": current_pickup_sig,
+                    "gesotown_limited_items": _serialize_gear_items(limited_items),
+                    "gesotown_pickup_items": _serialize_gear_items(pickup_items),
+                }
+            )
             if not GEAR_NOTIFY_ON_START:
-                gear_hash = None
+                return
 
         channel = await _get_text_channel(channel_id)
         if channel is None:
             return
 
-        if gear_hash and last_hash != gear_hash:
-            embeds, files, error = _build_gear_payloads(gear_data)
+        if last_limited_sig != current_limited_sig:
+            prev_limited = gear_state.get("gesotown_limited_items") or []
+            prev_by_key = {_gear_item_key(item): item for item in prev_limited}
+            cur_by_key = {_gear_item_key(item): item for item in limited_items}
+            added_keys = set(cur_by_key.keys()) - set(prev_by_key.keys())
+            removed_items = [prev_by_key[key] for key in prev_by_key.keys() if key not in cur_by_key]
+
+            embeds, files, error = _build_gear_rotation_payload(limited_items, added_keys, removed_items)
             if not error:
                 await channel.send(embeds=embeds, files=files)
-            _update_gear_notify_state({"gesotown_last_hash": gear_hash})
+
+        if last_pickup_sig != current_pickup_sig:
+            embeds, files, error = _build_pickup_payload(pickup, pickup_items)
+            if not error:
+                await channel.send(embeds=embeds, files=files)
+
+        _update_gear_notify_state(
+            {
+                "gesotown_limited_sig": current_limited_sig,
+                "gesotown_pickup_sig": current_pickup_sig,
+                "gesotown_limited_items": _serialize_gear_items(limited_items),
+                "gesotown_pickup_items": _serialize_gear_items(pickup_items),
+            }
+        )
 
         coop_data = get_coop_data()
         if not coop_data:

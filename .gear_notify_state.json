@@ -1,3 +1,54 @@
 {
-  "gesotown_last_hash": "a9620dfc59230f9f6fa602196c2bdeae"
+  "gesotown_last_hash": "bf14547a7f540e5acb15f8cc93262ee3",
+  "gesotown_limited_sig": "6f78865d137ef73e07ad9210212a2653",
+  "gesotown_pickup_sig": "5ad1197777ee63fe259a633475f4da94",
+  "gesotown_limited_items": [
+    {
+      "id": "a25f5df4d4740c9d",
+      "name": "ロッキンイエロー",
+      "price": 6000
+    },
+    {
+      "id": "2fa83f60d8f22b0d",
+      "name": "オレンジアローズ",
+      "price": 2750
+    },
+    {
+      "id": "64fd436581a6370b",
+      "name": "イロメガネ",
+      "price": 875
+    },
+    {
+      "id": "2b9bb9aa6b80f37e",
+      "name": "ダブルエッグサングラス",
+      "price": 4400
+    },
+    {
+      "id": "1825c769977fdd6e",
+      "name": "ヤキフグ サンバイザー",
+      "price": 1250
+    },
+    {
+      "id": "d9fa61c2e08b8edf",
+      "name": "デカロノーレース ホワイト",
+      "price": 3600
+    }
+  ],
+  "gesotown_pickup_items": [
+    {
+      "id": "66b67f985e1298a7",
+      "name": "サッカーバンド",
+      "price": 6000
+    },
+    {
+      "id": "6ca4c132c95f9752",
+      "name": "アロメテックT レッド",
+      "price": 6200
+    },
+    {
+      "id": "d8a06f7070e1db3c",
+      "name": "イロマキ750 イエロー",
+      "price": 2625
+    }
+  ]
 }
