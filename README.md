@@ -1,4 +1,4 @@
-# Splatoon Bot
+# Splatoon3 Bot
 
 Splatoon3 のステージ情報、サーモンラン情報、イベントマッチ情報、ゲソタウン情報を Discord で確認できる Bot です。
 
