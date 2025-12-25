@@ -1,3 +1,54 @@
 {
-  "gesotown_last_hash": "a9620dfc59230f9f6fa602196c2bdeae"
+  "gesotown_last_hash": "bf14547a7f540e5acb15f8cc93262ee3",
+  "gesotown_limited_sig": "b0a94d78b84a7eda3d8621295ad0df90",
+  "gesotown_pickup_sig": "c94a15265fb0dffe2bcddcacb327274a",
+  "gesotown_limited_items": [
+    {
+      "id": "2b9bb9aa6b80f37e",
+      "name": "ダブルエッグサングラス",
+      "price": 4400
+    },
+    {
+      "id": "1825c769977fdd6e",
+      "name": "ヤキフグ サンバイザー",
+      "price": 1250
+    },
+    {
+      "id": "d9fa61c2e08b8edf",
+      "name": "デカロノーレース ホワイト",
+      "price": 3600
+    },
+    {
+      "id": "1ca9c9434d3f3c41",
+      "name": "エゾッココーチ ウコン",
+      "price": 9200
+    },
+    {
+      "id": "1f7bc4016aa78813",
+      "name": "クラマナスウェット",
+      "price": 8000
+    },
+    {
+      "id": "b4d2003229cc69cd",
+      "name": "エギング4 アオクロ",
+      "price": 16500
+    }
+  ],
+  "gesotown_pickup_items": [
+    {
+      "id": "1ceee981c71928c8",
+      "name": "ヘッドバンド ホワイト",
+      "price": 750
+    },
+    {
+      "id": "c53e7522d9b61206",
+      "name": "ガチガサネ",
+      "price": 8000
+    },
+    {
+      "id": "9089992996ad5abf",
+      "name": "イカバケット",
+      "price": 1000
+    }
+  ]
 }
