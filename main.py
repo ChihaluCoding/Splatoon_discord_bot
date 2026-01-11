@@ -19,6 +19,7 @@ SALMON_API_URL = "https://spla3.yuu26.com/api/coop-grouping/schedule"
 TEAM_CONTEST_API_URL = "https://spla3.yuu26.com/api/coop-grouping-team-contest/schedule"
 EVENT_API_URL = "https://spla3.yuu26.com/api/event/schedule"
 FEST_API_URL = "https://spla3.yuu26.com/api/fest/schedule"
+FEST_CHALLENGE_API_URL = "https://spla3.yuu26.com/api/fest-challenge/schedule"
 GEAR_API_URL = "https://splatoon3.ink/data/gear.json"
 COOP_API_URL = "https://splatoon3.ink/data/coop.json"
 FESTIVALS_API_URL = "https://splatoon3.ink/data/festivals.json"
@@ -245,6 +246,18 @@ def get_fest_schedule():
     headers = {"User-Agent": USER_AGENT}
     try:
         response = requests.get(FEST_API_URL, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+
+def get_fest_challenge_schedule():
+    """APIからフェスマッチ(チャレンジ)のスケジュール情報を取得する"""
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        response = requests.get(FEST_CHALLENGE_API_URL, headers=headers, timeout=10)
         if response.status_code == 200:
             return response.json()
         return None
@@ -1674,6 +1687,10 @@ def _get_current_team_contest_item(data: dict) -> dict | None:
     results = data.get("results") or []
     return _find_current_item(results)
 
+def _get_current_fest_match_item(data: dict) -> dict | None:
+    results = data.get("results") or []
+    return _find_current_item(results)
+
 def _normalize_gear_items(entries: list[dict]) -> list[dict]:
     items: list[dict] = []
     for g in entries:
@@ -1909,6 +1926,87 @@ def _build_fest_payload_from_record(record: dict) -> tuple[discord.Embed | None,
 
     return embed, list(files_by_name.values()), None
 
+def _build_fest_match_embed_from_item(
+    item: dict,
+    title: str,
+    color: int,
+    files_by_name: dict[str, discord.File],
+) -> discord.Embed:
+    rule = _format_rule(item.get("rule"))
+    stage_names = _extract_stage_names(item.get("stages"))
+    stage1_name = stage_names[0] if len(stage_names) > 0 else "不明"
+    stage2_name = stage_names[1] if len(stage_names) > 1 else "不明"
+    start_time = _format_hhmm(item["start_time"])
+    end_time = _format_hhmm(item["end_time"])
+
+    embed = discord.Embed(title=f"【{title}】", color=color)
+    embed.add_field(name="時間", value=f"{start_time}～{end_time}", inline=True)
+    embed.add_field(name="ルール", value=f"**{rule}**", inline=True)
+    embed.add_field(name="ステージ", value=f"1. {stage1_name}\n2. {stage2_name}", inline=False)
+
+    rule_icon_path = _find_local_rule_icon(rule)
+    stage1_path = _find_local_image_by_name(stage1_name)
+    stage2_path = _find_local_image_by_name(stage2_name)
+    card_bytes = _render_stage_card_bytes(
+        rule_name=rule,
+        rule_icon_path=rule_icon_path,
+        stage1_name=stage1_name,
+        stage1_path=stage1_path,
+        stage2_name=stage2_name,
+        stage2_path=stage2_path,
+    )
+    if card_bytes:
+        filename = f"fest_card_{hashlib.md5(card_bytes).hexdigest()}.png"
+        embed.set_image(url=f"attachment://{filename}")
+        if filename not in files_by_name:
+            files_by_name[filename] = discord.File(fp=io.BytesIO(card_bytes), filename=filename)
+    elif stage1_path:
+        filename = _safe_attachment_filename(stage1_path, prefix="stage")
+        embed.set_image(url=f"attachment://{filename}")
+        if filename not in files_by_name:
+            files_by_name[filename] = discord.File(stage1_path, filename=filename)
+
+    return embed
+
+def _build_fest_match_payload(
+    open_item: dict | None,
+    challenge_item: dict | None,
+) -> tuple[list[discord.Embed] | None, list[discord.File] | None, str | None]:
+    if not open_item and not challenge_item:
+        return None, None, "フェスマッチ情報がありません。"
+    files_by_name: dict[str, discord.File] = {}
+    embeds: list[discord.Embed] = []
+    if open_item:
+        embeds.append(_build_fest_match_embed_from_item(open_item, "フェスマッチ(オープン)", 0xFF3D6E, files_by_name))
+    if challenge_item:
+        embeds.append(_build_fest_match_embed_from_item(challenge_item, "フェスマッチ(チャレンジ)", 0xFF3D6E, files_by_name))
+    return embeds, list(files_by_name.values()), None
+
+def _get_fest_match_payload() -> tuple[list[discord.Embed] | None, list[discord.File] | None, str | None]:
+    if not _is_fest_active():
+        return None, None, "現在開催中のフェスはありません。"
+    open_data = get_fest_schedule()
+    challenge_data = get_fest_challenge_schedule()
+    if not open_data and not challenge_data:
+        return None, None, "データの取得に失敗しました。"
+    open_item = _get_current_fest_match_item(open_data or {})
+    challenge_item = _get_current_fest_match_item(challenge_data or {})
+    if not open_item and not challenge_item:
+        return None, None, "フェスマッチ情報がありません。"
+    return _build_fest_match_payload(open_item, challenge_item)
+
+def _build_fest_match_rotation_key(open_item: dict | None, challenge_item: dict | None) -> str | None:
+    parts: list[str] = []
+    if open_item:
+        key = open_item.get("start_time")
+        if key:
+            parts.append(f"open:{key}")
+    if challenge_item:
+        key = challenge_item.get("start_time")
+        if key:
+            parts.append(f"challenge:{key}")
+    return "|".join(parts) if parts else None
+
 
 def _get_team_contest_payload() -> tuple[discord.Embed | None, list[discord.File] | None, str | None]:
     data = get_team_contest_schedule()
@@ -1985,9 +2083,26 @@ async def now(ctx):
     """/now で現在のステージを通知"""
     await _send_stage_embed(ctx, schedule_index=0, title="現在のステージ情報")
 
+@bot.command(name="fest_match_now")
+async def fest_match_now(ctx):
+    """/fest_match_now で現在のフェスマッチ(オープン/チャレンジ)を通知"""
+    embeds, files, error = _get_fest_match_payload()
+    if error:
+        await ctx.send(error)
+        return
+    await ctx.send(embeds=embeds, files=files)
+
 @bot.tree.command(name="now", description="現在のステージを表示します")
 async def now_slash(interaction: discord.Interaction):
     embeds, files, error = _get_stage_payload(schedule_index=0, title_prefix="現在のステージ情報")
+    if error:
+        await interaction.response.send_message(error, ephemeral=True)
+        return
+    await interaction.response.send_message(embeds=embeds, files=files)
+
+@bot.tree.command(name="fest_match_now", description="現在のフェスマッチ(オープン/チャレンジ)を表示します")
+async def fest_match_now_slash(interaction: discord.Interaction):
+    embeds, files, error = _get_fest_match_payload()
     if error:
         await interaction.response.send_message(error, ephemeral=True)
         return
@@ -2503,6 +2618,62 @@ async def _fest_auto_notify_loop():
 
     _update_state({"fest_last_rotation_key": rotation_key})
 
+@tasks.loop(minutes=1)
+async def _fest_stage_auto_notify_loop():
+    state = _load_state()
+    channel_id = _resolve_notify_channel_id(state, "fest_notify_channel_id", FEST_NOTIFY_CHANNEL_ID)
+    if not channel_id:
+        return
+    if not _is_fest_active():
+        return
+
+    open_data = get_fest_schedule()
+    challenge_data = get_fest_challenge_schedule()
+    if not open_data and not challenge_data:
+        return
+
+    open_item = _get_current_fest_match_item(open_data or {})
+    challenge_item = _get_current_fest_match_item(challenge_data or {})
+    if not open_item and not challenge_item:
+        return
+
+    rotation_key = _build_fest_match_rotation_key(open_item, challenge_item)
+    if not rotation_key:
+        return
+
+    last_key = state.get("fest_stage_last_rotation_key")
+    if last_key is None:
+        _update_state({"fest_stage_last_rotation_key": rotation_key})
+        if not FEST_NOTIFY_ON_START:
+            return
+
+    if last_key == rotation_key:
+        return
+
+    channel = await _get_text_channel(channel_id)
+    if channel is None:
+        return
+
+    embeds, files, error = _build_fest_match_payload(open_item, challenge_item)
+    if error:
+        return
+
+    last_message_id = state.get("fest_stage_last_message_id")
+    if last_message_id:
+        try:
+            old_msg = await channel.fetch_message(int(last_message_id))
+            await old_msg.delete()
+        except Exception:
+            pass
+
+    sent = await channel.send(embeds=embeds, files=files)
+    _update_state(
+        {
+            "fest_stage_last_rotation_key": rotation_key,
+            "fest_stage_last_message_id": int(sent.id),
+        }
+    )
+
 
 @tasks.loop(minutes=10)
 async def _gear_auto_notify_loop():
@@ -2670,6 +2841,8 @@ async def on_ready():
         _team_contest_auto_notify_loop.start()
     if not _fest_auto_notify_loop.is_running():
         _fest_auto_notify_loop.start()
+    if not _fest_stage_auto_notify_loop.is_running():
+        _fest_stage_auto_notify_loop.start()
     if not _gear_auto_notify_loop.is_running():
         _gear_auto_notify_loop.start()
     if not _xrank_daily_notify_loop.is_running():
