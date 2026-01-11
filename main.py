@@ -1977,14 +1977,12 @@ def _build_fest_match_payload(
     files_by_name: dict[str, discord.File] = {}
     embeds: list[discord.Embed] = []
     if open_item:
-        embeds.append(_build_fest_match_embed_from_item(open_item, "フェスマッチ(オープン)", 0xFF3D6E, files_by_name))
+        embeds.append(_build_fest_match_embed_from_item(open_item, "フェスマッチ(オープン)", 0x33CCFF, files_by_name))
     if challenge_item:
-        embeds.append(_build_fest_match_embed_from_item(challenge_item, "フェスマッチ(チャレンジ)", 0xFF3D6E, files_by_name))
+        embeds.append(_build_fest_match_embed_from_item(challenge_item, "フェスマッチ(チャレンジ)", 0x33CCFF, files_by_name))
     return embeds, list(files_by_name.values()), None
 
 def _get_fest_match_payload() -> tuple[list[discord.Embed] | None, list[discord.File] | None, str | None]:
-    if not _is_fest_active():
-        return None, None, "現在開催中のフェスはありません。"
     open_data = get_fest_schedule()
     challenge_data = get_fest_challenge_schedule()
     if not open_data and not challenge_data:
@@ -2623,8 +2621,6 @@ async def _fest_stage_auto_notify_loop():
     state = _load_state()
     channel_id = _resolve_notify_channel_id(state, "fest_notify_channel_id", FEST_NOTIFY_CHANNEL_ID)
     if not channel_id:
-        return
-    if not _is_fest_active():
         return
 
     open_data = get_fest_schedule()

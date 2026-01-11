@@ -13,5 +13,6 @@
   "stage_last_message_id": 1459909802808578210,
   "team_contest_notify_channel_id": 1451486907430080563,
   "salmon_notify_channel_id": 1451486907430080563,
-  "event_last_rotation_key": "2026-01-08T23:00:00+09:00"
+  "event_last_rotation_key": "2026-01-08T23:00:00+09:00",
+  "fest_stage_last_rotation_key": "open:2026-01-11T23:00:00+09:00|challenge:2026-01-11T23:00:00+09:00"
 }
